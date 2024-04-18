@@ -1,0 +1,3 @@
+sqlTest
+*.sql
+tmp/

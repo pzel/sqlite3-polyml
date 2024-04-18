@@ -1,3 +1,5 @@
+local
+
 open Foreign
 
 datatype sqliteType =
@@ -27,7 +29,7 @@ val cSqliteType : sqliteType conversion = makeConversion
                   in (Memory.set32(m, 0w0, Word32.fromInt(i)); fn _ => ())
                   end}
 
-val libsqlite3 = loadLibrary "libsqlite3.dylib";
+val libsqlite3 = loadLibrary "libsqlite3.so";
 val sym = getSymbol libsqlite3;
 val ** = cStar cPointer;
 
@@ -51,14 +53,19 @@ val c_columnValue = buildCall2 (sym "sqlite3_column_value", (cPointer, cInt), cP
 
 type 'a array = 'a Array.array;
 
-type db = { dbH : Memory.voidStar ref,
-            stmt : Memory.voidStar ref option }
+in
 
-fun init (filename : string) : db option =
-    { dbH = ref (Memory.malloc 0w1),
-      stmt = NONE };
+structure Sqlite = struct
+  fun openDb (filename : string) =
+  let val dbH = ref (Memory.malloc 0w1)
+  in c_openDb ("hello.sql", dbH)
+  end
+  end
+end
 
 
+
+(*
 fun main () =
     let
         val dbH = ref (Memory.malloc 0w1);
@@ -95,3 +102,4 @@ fun main () =
                      "close=",PolyML.makestring closeRes, " ",
                      "\n"])
     end
+*)
