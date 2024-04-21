@@ -1,8 +1,28 @@
-fsignature Result = sig
-  type ('a, 'e) t = ('a, 'e) result = Ok of 'a | Error of 'e
+signature RESULT = sig
+  datatype ('a, 'e) result = Ok of 'a | Error of 'e
   val ok : 'a -> ('a, 'e) result
   val error : 'e -> ('a, 'e) result
-  val value : ('a, 'e) result -> default:'a -> 'a
+  val valOf : ('a, 'e) result -> 'a -> 'a
+end
+
+structure Result :> RESULT = struct
+    datatype ('a, 'e) result = Ok of 'a | Error of 'e;
+
+    fun ok x = Ok x;
+    fun error x = Error x;
+    fun valOf (Ok v) _ = v
+      | valOf (Error _) d = d;
+end
+
+
+
+
+(* NOTES:
+
+  This is the Result signature for the ocaml standard library.
+  Take from here if you need it.
+
+
   val get_ok : ('a, 'e) result -> 'a
   val get_error : ('a, 'e) result -> 'e
   val bind :
@@ -30,4 +50,5 @@ fsignature Result = sig
   val to_option : ('a, 'e) result -> 'a option
   val to_list : ('a, 'e) result -> 'a list
   val to_seq : ('a, 'e) result -> 'a Stdlib.Seq.t
-end
+
+*)

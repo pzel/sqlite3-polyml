@@ -1,3 +1,4 @@
 sqlTest
+resultTest
 *.sql
 tmp/
