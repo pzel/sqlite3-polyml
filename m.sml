@@ -1,14 +1,12 @@
 (* just some notes on modules *)
+
 signature DOESA = sig
   val a : (int -> int);
 end
 
-
 signature DOESB = sig
   val b : (int -> int);
 end
-
-
 
 structure As : DOESA = struct
 fun a x = x
@@ -22,11 +20,9 @@ end
 
 structure BB : DOESB = Bs;
 
-
 fun main () =
     (PolyML.print(As.a(1)); print "\n";
      PolyML.print(Bs.b(1)); print "\n";
      PolyML.print(Bs.a(1)); print "\n";
      PolyML.print(BB.b(1)); print "\n";
-
      print "OK\n");

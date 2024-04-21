@@ -1,4 +1,5 @@
 signature SQLITE3 = sig
+    (* The aim is to mirror closely the C interface *)
     type db;
     type sqliteErrorCode;
     datatype value = SqlInt of int
@@ -13,13 +14,10 @@ signature SQLITE3 = sig
     val step : db -> sqliteErrorCode;
     val finalize : db -> sqliteErrorCode;
     val bind : (db * value list) -> bool;
-    val bindParameterCount : db -> int;
+    val bindParameterCount : db -> int; 
 end
 
-structure Sqlite : SQLITE3 = struct
-  (* Value s stored in sqlite3_value objects can be integers, floating point
-    values, strings, BLOBs, or NULL.
-  *)
+structure Sqlite = struct
 
 open Foreign
 val libsqlite3 = loadLibrary "libsqlite3.so";
@@ -132,3 +130,5 @@ fun bind (db : db, values : value list) : bool =
     end
 
 end
+
+structure Sqlite3 : SQLITE3 = Sqlite
