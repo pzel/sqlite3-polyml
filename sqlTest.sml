@@ -110,12 +110,58 @@ val bindTests = [
                val res = Sqlite.bind(db, [S.SqlNull, S.SqlNull, S.SqlNull])
            in res == true
            end)
+]
 
+val stepTests = [
+    It "can step through a bound statement" (
+        fn _ =>
+           let val db = givenTable (concat ["create table t ",
+                                            "(a int, b double, c text)"])
+               val 0 = Sqlite.prepare(db, "insert into t values (?,?,?)")
+               val true = Sqlite.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
+               val res = Sqlite.step(db)
+           in res == 101
+           end),
 
+    It "can finalize a stepped-through statement" (
+        fn _ =>
+           let val db = givenTable (concat ["create table t ",
+                                            "(a int, b double, c text)"])
+               val 0 = Sqlite.prepare(db, "insert into t values (?,?,?)")
+               val true = Sqlite.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
+               val 101 = Sqlite.step(db)
+               val res = Sqlite.finalize(db)
+           in res == 0
+           end),
+
+    It "can step as many times as there are rows in result" (
+        fn _ =>
+           let
+               val db = givenTable (concat ["create table t ",
+                                            "(a int, b double, c text)"])
+               fun insert (i, d, t) = (
+                   Sqlite.prepare(db, "insert into t values (?,?,?)");
+                   Sqlite.bind(db, [S.SqlInt i, S.SqlDouble d, S.SqlText t]);
+                   Sqlite.step(db));
+
+               val _ = (insert (1,   2.0, "a");
+                        insert (10,  20.0, "b");
+                        insert (100, 200.0, "c"));
+               val 0 = Sqlite.finalize(db)
+
+               val 0 = Sqlite.prepare(db, "select * from t");
+               val a = Sqlite.step(db);
+               val b = Sqlite.step(db);
+               val c = Sqlite.step(db);
+               val d = Sqlite.step(db);
+
+           in (a,b,c,d) == (100,100,100,101)
+           end
+    )
 
 ]
 
 
-fun main () =
-  runTests (openCloseTests @ statementTests @ bindTests)
 
+fun main () =
+  runTests (openCloseTests @ statementTests @ bindTests @ stepTests)

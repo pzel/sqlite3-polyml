@@ -1,3 +1,21 @@
+signature SQLITE3 = sig
+    type db;
+    type sqliteErrorCode;
+    datatype value = SqlInt of int
+                   | SqlInt64 of int
+                   | SqlDouble of real
+                   | SqlText of string
+                   | SqlNull;
+
+    val openDb : string -> (sqliteErrorCode * db option);
+    val close : db -> sqliteErrorCode;
+    val prepare : (db * string) -> sqliteErrorCode;
+    val step : db -> sqliteErrorCode;
+    val finalize : db -> sqliteErrorCode;
+    val bind : (db * value list) -> bool;
+    val bindParameterCount : db -> int;
+end
+
 local
 open Foreign
 datatype sqliteType =
@@ -82,18 +100,20 @@ val c_columnValue = buildCall2 (sym "sqlite3_column_value", (cPointer, cInt), cP
 type 'a array = 'a Array.array;
 
 type stmt = Memory.voidStar ref;
-type db = {dbHandle: Memory.voidStar ref, stmt: stmt, values: Memory.voidStar ref list}
 
 
-type sqliteErrorCode = int;
+
+
 
 in
 
-structure Sqlite = struct
+structure Sqlite : SQLITE3 = struct
   (* Value s stored in sqlite3_value objects can be integers, floating point
     values, strings, BLOBs, or NULL.
   *)
-  datatype Value = SqlInt of int
+  type sqliteErrorCode = int;
+  type db = {dbHandle: Memory.voidStar ref, stmt: stmt, values: Memory.voidStar ref list}
+  datatype value = SqlInt of int
                  | SqlInt64 of int
                  | SqlDouble of real
                  | SqlText of string
@@ -121,7 +141,7 @@ structure Sqlite = struct
       c_bindParameterCount(!stmt);
 
   (* private, let's use opaque modules for this later *)
-  fun bindValue (stmt : stmt, idx: int, value: Value) : sqliteErrorCode =
+  fun bindValue (stmt : stmt, idx: int, value: value) : sqliteErrorCode =
       case value of
           SqlInt i => c_bindInt(!stmt, idx, i)
         | SqlInt64 i => c_bindInt64(!stmt, idx, i)
@@ -129,7 +149,7 @@ structure Sqlite = struct
         | SqlText s => c_bindText(!stmt, idx, s, ~1, ~1)
         | SqlNull => c_bindNull(!stmt, idx);
 
-  fun bind (db : db, values : Value list) : bool =
+  fun bind (db : db, values : value list) : bool =
       (* todo check that parameter count and len(values) is the same *)
       let val iota = List.tabulate(length values, fn i => i+1)
           val zipped = ListPair.zip(iota, values);
