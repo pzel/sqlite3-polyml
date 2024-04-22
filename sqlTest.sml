@@ -173,11 +173,11 @@ val runQueryTests = [
         fn _=>
            let val db = givenTable "create table f (a int, b double, c text)";
                val _ = S.runQuery "insert into f values (?,?,?)" [
-                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
+                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "\226\141\186\226\141\181"] db;
                val res = S.runQuery "select * from f" [] db;
                val (row::[]) = res
            in case row of
-                  [S.SqlInt 1, S.SqlDouble _, S.SqlText "X"] => succeed "selected"
+                  [S.SqlInt 1, S.SqlDouble _, S.SqlText "\226\141\186\226\141\181"] => succeed "selected"
                 | other => fail ("failed:" ^ (PolyML.makestring other))
            end
     )
