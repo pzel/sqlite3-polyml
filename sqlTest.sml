@@ -25,7 +25,6 @@ val openCloseTests = [
 ];
 
 val statementTests = [
-
     It "can prepare a statement" (
         fn _ =>
            let val (0, SOME db) = S.openDb(freshName());
@@ -136,8 +135,7 @@ val stepTests = [
     It "can step as many times as there are rows in result" (
         fn _ =>
            let
-               val db = givenTable (concat ["create table t ",
-                                            "(a int, b double, c text)"])
+               val db = givenTable ("create table t (a int, b double, c text)")
                fun insert (i, d, t) = (
                    S.prepare(db, "insert into t values (?,?,?)");
                    S.bind(db, [S.SqlInt i, S.SqlDouble d, S.SqlText t]);
@@ -162,5 +160,32 @@ val stepTests = [
 
 
 
+val runQueryTests = [
+    It "can insert in one go" (
+        fn _=>
+           let val db = givenTable "create table t (a int, b double, c text)";
+               val res = S.runQuery "insert into t values (?,?,?)" [
+                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
+           in length res == 0 end
+    ),
+
+    It "can read a row" (
+        fn _=>
+           let val db = givenTable "create table f (a int, b double, c text)";
+               val _ = S.runQuery "insert into f values (?,?,?)" [
+                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
+               val res = S.runQuery "select * from f" [] db;
+               val (row::[]) = res
+           in case row of
+                  [S.SqlInt 1, S.SqlDouble _, S.SqlText "X"] => succeed "selected"
+                | other => fail ("failed:" ^ (PolyML.makestring other))
+           end
+    )
+
+]
+
+
 fun main () =
-  runTests (openCloseTests @ statementTests @ bindTests @ stepTests)
+    let val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
+        val highLevelTests = runQueryTests
+    in runTests (lowLevelTests @ highLevelTests) end;

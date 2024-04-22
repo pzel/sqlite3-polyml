@@ -1,7 +1,7 @@
 signature SQLITE3 = sig
     (* The aim is to mirror closely the C interface *)
     type db;
-    type sqliteErrorCode;
+    eqtype sqliteErrorCode;
     datatype value = SqlInt of int
                    | SqlInt64 of int
                    | SqlDouble of real
@@ -14,8 +14,12 @@ signature SQLITE3 = sig
     val step : db -> sqliteErrorCode;
     val finalize : db -> sqliteErrorCode;
     val bind : (db * value list) -> bool;
-    val bindParameterCount : db -> int; 
+    val bindParameterCount : db -> int;
+
+    (* high-level functions *)
+    val runQuery : string -> value list -> db -> value list list;
 end
+
 
 structure Sqlite = struct
 
@@ -74,7 +78,7 @@ val c_columnInt = buildCall2 (sym "sqlite3_column_int", (cPointer, cInt), cInt);
 val c_columnInt64 = buildCall2 (sym "sqlite3_column_int64", (cPointer, cInt), cInt64);
 val c_columnText = buildCall2 (sym "sqlite3_column_text", (cPointer, cInt), cPointer);
 val c_columnBytes = buildCall2 (sym "sqlite3_column_bytes", (cPointer, cInt), cInt);
-val c_columnValue = buildCall2 (sym "sqlite3_column_value", (cPointer, cInt), cPointer); (* sqlvalue *)
+(* val c_columnValue = buildCall2 (sym "sqlite3_column_value", (cPointer, cInt), cPointer);*)
 
 
 type stmt = Memory.voidStar ref;
@@ -128,6 +132,43 @@ fun bind (db : db, values : value list) : bool =
     in
         List.all (fn r => r = 0) res
     end
+
+(* helpers for high-level interface *)
+fun getRes (stmt : stmt) : value list =
+    case c_columnCount(!stmt) of
+        0 => []
+      | n => getColumns(stmt,0,n,[])
+and getColumns (stmt, idx, total, acc) : value list =
+    let val thisColumn = case c_columnType(!stmt, idx) of
+                             SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
+                           | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
+                           | SQLITE_TEXT => SqlText (readText (c_columnText (!stmt, idx)) [])
+                           | SQLITE_BLOB => raise (Fail "BLOB not supported right now")
+                           | SQLITE_NULL => SqlNull
+    in if idx = total-1
+       then rev (thisColumn::acc)
+       else getColumns(stmt, idx+1, total, thisColumn::acc)
+    end
+and readText (addr: Memory.voidStar) (acc : char list) : string =
+    (* there should be a better way to do this *)
+    case Memory.get8(addr, 0w0) of
+        0w0 => String.implode (rev acc)
+      | c => readText(Memory.++(addr,0w1)) (Char.chr(Word8.toInt(c))::acc)
+
+
+fun stepThrough (db as {stmt,...}: db, acc : value list list) =
+    case step(db) of
+        101 => rev acc
+      | 100 => stepThrough(db, getRes stmt :: acc)
+      | code => raise Fail("Sqlite error:" ^ Int.toString(code))
+
+(* High-level interface *)
+fun runQuery (sql : string) (params : value list) (db: db) : value list list =
+    if prepare(db, sql) <> 0
+    then raise (Fail "TODO: failed to Prepare statement")
+    else if bind(db, params) <> true
+    then raise (Fail "TODO2")
+    else stepThrough(db, []) before ignore (finalize db)
 
 end
 
