@@ -1,7 +1,7 @@
 signature SQLITE3 = sig
     (* The aim is to mirror closely the C interface *)
     type db;
-    eqtype sqliteErrorCode;
+    type sqliteErrorCode = int (* todo model this as datatype *)
     datatype value = SqlInt of int
                    | SqlInt64 of int
                    | SqlDouble of real
@@ -21,7 +21,7 @@ signature SQLITE3 = sig
 end
 
 
-structure Sqlite = struct
+structure Sqlite3 :> SQLITE3 = struct
 
 open Foreign
 val libsqlite3 = loadLibrary "libsqlite3.so";
@@ -172,4 +172,3 @@ fun runQuery (sql : string) (params : value list) (db: db) : value list list =
 
 end
 
-structure Sqlite3 : SQLITE3 = Sqlite
