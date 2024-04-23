@@ -2,6 +2,7 @@ use "assert.sml";
 use "sql.sml";
 
 structure S = Sqlite3
+open Sqlite3 (* for error codes *)
 
 fun freshName () : string =
     concat [ "tmp/"
@@ -13,50 +14,50 @@ val openCloseTests = [
     It "can open a db file" (
         fn _ =>
            let val (res, db) = S.openDb(freshName())
-           in res == 0
+           in res == SQLITE_OK
            end),
 
     It "can close a db file" (
         fn _ =>
-           let val (0, SOME db) = S.openDb(freshName())
+           let val (SQLITE_OK, SOME db) = S.openDb(freshName())
                val res = S.close(db)
-           in res == 0
+           in res == SQLITE_OK
            end)
 ];
 
 val statementTests = [
     It "can prepare a statement" (
         fn _ =>
-           let val (0, SOME db) = S.openDb(freshName());
+           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
                val res = S.prepare(db, "create table t (v int)")
-           in res == 0
+           in res == SQLITE_OK
            end),
 
-    It "can step a statement and get 101 when its done" (
+    It "can step a statement and get SQLITE_DONE when its done" (
         fn _ =>
-           let val (0, SOME db) = S.openDb(freshName());
-               val 0  = S.prepare(db, "create table t (v int)")
+           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
+               val SQLITE_OK  = S.prepare(db, "create table t (v int)")
                val res = S.step(db)
-           in res == 101
+           in res == SQLITE_DONE
            end),
 
     It "can finalize a statement" (
         fn _ =>
-           let val (0, SOME db) = S.openDb(freshName());
-               val 0 = S.prepare(db, "create table t (v int)")
-               val 101 = S.step(db);
+           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
+               val SQLITE_OK = S.prepare(db, "create table t (v int)")
+               val SQLITE_DONE = S.step(db);
                val res = S.finalize(db);
-           in res == 0
+           in res == SQLITE_OK
            end)
 
 ];
 
 
 fun givenTable (ddl : string) =
-    let val (0, SOME db) = S.openDb(freshName());
-        val 0 = S.prepare(db, ddl)
-        val 101 = S.step(db);
-        val 0 = S.finalize(db);
+    let val (SQLITE_OK, SOME db) = S.openDb(freshName());
+        val SQLITE_OK = S.prepare(db, ddl)
+        val SQLITE_DONE = S.step(db);
+        val SQLITE_OK = S.finalize(db);
     in db
     end;
 
@@ -115,21 +116,21 @@ val stepTests = [
         fn _ =>
            let val db = givenTable (concat ["create table t ",
                                             "(a int, b double, c text)"])
-               val 0 = S.prepare(db, "insert into t values (?,?,?)")
+               val SQLITE_OK = S.prepare(db, "insert into t values (?,?,?)")
                val true = S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
                val res = S.step(db)
-           in res == 101
+           in res == SQLITE_DONE
            end),
 
     It "can finalize a stepped-through statement" (
         fn _ =>
            let val db = givenTable (concat ["create table t ",
                                             "(a int, b double, c text)"])
-               val 0 = S.prepare(db, "insert into t values (?,?,?)")
+               val SQLITE_OK = S.prepare(db, "insert into t values (?,?,?)")
                val true = S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-               val 101 = S.step(db)
+               val SQLITE_DONE = S.step(db)
                val res = S.finalize(db)
-           in res == 0
+           in res == SQLITE_OK
            end),
 
     It "can step as many times as there are rows in result" (
@@ -144,15 +145,15 @@ val stepTests = [
                val _ = (insert (1,   2.0, "a");
                         insert (10,  20.0, "b");
                         insert (100, 200.0, "c"));
-               val 0 = S.finalize(db)
+               val SQLITE_OK = S.finalize(db)
 
-               val 0 = S.prepare(db, "select * from t");
+               val SQLITE_OK = S.prepare(db, "select * from t");
                val a = S.step(db);
                val b = S.step(db);
                val c = S.step(db);
                val d = S.step(db);
 
-           in (a,b,c,d) == (100,100,100,101)
+           in (a,b,c,d) == (SQLITE_ROW,SQLITE_ROW,SQLITE_ROW,SQLITE_DONE)
            end
     )
 
