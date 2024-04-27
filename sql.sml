@@ -64,11 +64,11 @@ open SqliteCodes;
 
 
 datatype sqliteType =
-         SQLITE_INTEGER  (* 1 *)
-       | SQLITE_FLOAT    (* 2 *)
-       | SQLITE_TEXT     (* 3 *)
-       | SQLITE_BLOB     (* 4 *)
-       | SQLITE_NULL     (* 5 *)
+         SQLITE_INTEGER
+       | SQLITE_FLOAT
+       | SQLITE_TEXT
+       | SQLITE_BLOB
+       | SQLITE_NULL
 
 val cSqliteType : sqliteType conversion = makeConversion
       {ctype = LowLevel.cTypeInt32,
