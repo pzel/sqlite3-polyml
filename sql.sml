@@ -53,6 +53,7 @@ signature SQLITE3 = sig
 
     (* high-level functions *)
     val runQuery : string -> value list -> db -> value list list;
+    val execute : string -> db -> sqliteResultCode;
 end
 
 
@@ -221,10 +222,24 @@ fun stepThrough (db as {stmt,...}: db, acc : value list list) =
 
 (* High-level interface *)
 fun runQuery (sql : string) (params : value list) (db: db) : value list list =
-    if prepare(db, sql) <> SQLITE_OK
-    then raise (Fail "TODO: failed to Prepare statement")
-    else if bind(db, params) <> true
-    then raise (Fail "TODO2")
-    else stepThrough(db, []) before ignore (finalize db)
+    let val res0 = prepare(db, sql)
+    in if res0 <> SQLITE_OK
+       then raise Fail ("TODO: failed to Prepare statement" ^ (PolyML.makestring res0))
+       else if bind(db, params) <> true
+       then raise (Fail "TODO2")
+       else stepThrough(db, []) before ignore (finalize db)
+    end
+
+fun execute (sql : string) (db: db) : sqliteResultCode =
+    let val res0 = prepare(db, sql)
+    in if res0 <> SQLITE_OK
+       then raise Fail ("TODO: failed to Prepare statement" ^ (PolyML.makestring res0))
+       else (let val res1 = step(db) in
+               if res1 = SQLITE_DONE
+               then SQLITE_OK before ignore (finalize db)
+               else res1
+             end)
+    end
+
 
 end

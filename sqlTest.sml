@@ -247,8 +247,16 @@ val runQueryTests = [
                S.SqlBlob v] => succeed "selected"
             | other => fail ("failed:" ^ (PolyML.makestring other))
        end
-  )
+  ),
 
+  It "returns proper codes on constraint violation" (
+    fn _=>
+       let val db = givenTable "create table f (a int)"
+           val r0 = SQLITE_OK =?= (S.execute "create unique index fi on f (a)" db)
+           val r1 = SQLITE_OK =?= (S.execute "insert into f values (1)" db)
+           val r2 = S.execute "insert into f values (1)" db
+       in r2 == SQLITE_CONSTRAINT
+       end)
 
 ]
 
