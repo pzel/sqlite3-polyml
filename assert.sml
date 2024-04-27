@@ -3,7 +3,7 @@ local
   exception TestErr of string * string;
   type raises_OK_or_ERR = unit
 in
-infixr 2 == != =/=
+infixr 2 == != =/= =?=
 type testresult = (string * int);
 datatype tcase =
    T of (unit -> raises_OK_or_ERR)
@@ -36,6 +36,23 @@ fun (expected : exn) != (f : (unit -> 'z)) : raises_OK_or_ERR =
    (* we ran left() without any errors, which we expected. This is a failure *)
    raise TestErr (exnMessage expected, "(ran successfully)"))
 
+(*
+  Returns ''a if comparison successful, fails the test otherwise.
+  This is useful to get around match exhaustiveness warnings when doing
+  'assertion-style' match-based testing like in Erlang.
+
+  let val res = (someOp() =?= ALLGOOD)
+
+  The above will fail the test if someOp does not return SOMERES, otherwise it'll
+  bind res to ALLGOOD
+*)
+
+fun (left : ''a) =?= (right : ''a) : ''a =
+  if left = right
+  then left
+  else raise (TestErr (PolyML.makestring left, PolyML.makestring right))
+
+
 fun ppExn (e : exn) : string =
     let val loc = PolyML.exceptionLocation e;
         val locmsg =
@@ -47,7 +64,7 @@ fun ppExn (e : exn) : string =
 
 fun runTest (T f : tcase) : testresult = runTest (IT ("", f))
   | runTest ((IT (desc,f)) : tcase) : testresult =
-    let fun fmt (result, data) = String.concat([result, " ", desc, "\n\t", data])
+    let fun fmt (result, data) = String.concat([result, " ", desc, "\n\t", data, "\n"])
     in
       (f();             (fmt ("ERROR", "~no assertion~"), 1))
       handle
@@ -73,7 +90,7 @@ in
   then p ("ALL TESTS PASSED: " ^ success_ratio)
   else (p "";
         app (p o #1) errors;
-        p ("\n\nFAILED " ^ error_ratio ^ "\n");
+        p ("\nTESTS FAILED: " ^ error_ratio ^ "\n");
         OS.Process.exit(OS.Process.failure))
 end;
 

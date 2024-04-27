@@ -9,6 +9,18 @@ fun freshName () : string =
            , (LargeInt.toString o Time.toNanoseconds) (Time.now())
            , ".sqlite"];
 
+fun givenDb () : db =
+    case S.openDb(freshName()) of
+        (SQLITE_OK, SOME db) => db
+     | _ => raise (Fail "givenDb: failed to open db")
+
+fun givenTable (ddl : string) =
+    let val db = givenDb ()
+        val ok = SQLITE_OK =?= S.prepare(db, ddl)
+        val done = SQLITE_DONE =?= S.step(db)
+        val ok = SQLITE_OK =?= S.finalize(db)
+    in db
+    end;
 
 val openCloseTests = [
     It "can open a db file" (
@@ -35,44 +47,34 @@ val openCloseTests = [
         fn _ =>
            case S.openDb "/dev/mem" of
                (SQLITE_OK, SOME _) => fail "opened bad file"
-             | (res, NONE) => res == SQLITE_CANTOPEN)
+             | (res, NONE) => res == SQLITE_CANTOPEN
+             | _ => fail "something bad happened")
 ];
 
 val statementTests = [
     It "can prepare a statement" (
-        fn _ =>
-           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
-               val res = S.prepare(db, "create table t (v int)")
-           in res == SQLITE_OK
-           end),
+      fn _ => S.prepare(givenDb(), "create table t (v int)")
+                       == SQLITE_OK),
 
     It "can step a statement and get SQLITE_DONE when its done" (
         fn _ =>
-           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
-               val SQLITE_OK  = S.prepare(db, "create table t (v int)")
+           let val db = givenDb ()
+               val r = S.prepare(db, "create table t (v int)")
+               val _ = (r == SQLITE_OK)
                val res = S.step(db)
            in res == SQLITE_DONE
            end),
 
     It "can finalize a statement" (
         fn _ =>
-           let val (SQLITE_OK, SOME db) = S.openDb(freshName());
-               val SQLITE_OK = S.prepare(db, "create table t (v int)")
-               val SQLITE_DONE = S.step(db);
+           let val db = givenDb ()
+               val _ = SQLITE_OK =?= S.prepare(db, "create table t (v int)")
+               val _ = SQLITE_DONE =?= S.step(db);
                val res = S.finalize(db);
            in res == SQLITE_OK
            end)
 
 ];
-
-
-fun givenTable (ddl : string) =
-    let val (SQLITE_OK, SOME db) = S.openDb(freshName());
-        val SQLITE_OK = S.prepare(db, ddl)
-        val SQLITE_DONE = S.step(db);
-        val SQLITE_OK = S.finalize(db);
-    in db
-    end;
 
 val bindTests = [
     It "can get a bind parameter count" (
@@ -125,76 +127,95 @@ val bindTests = [
 ]
 
 val stepTests = [
-    It "can step through a bound statement" (
-        fn _ =>
-           let val db = givenTable (concat ["create table t ",
-                                            "(a int, b double, c text)"])
-               val SQLITE_OK = S.prepare(db, "insert into t values (?,?,?)")
-               val true = S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-               val res = S.step(db)
-           in res == SQLITE_DONE
-           end),
+  It "can step through a bound statement" (
+    fn _ =>
+       let val db = givenTable (concat ["create table t ",
+                                        "(a int, b double, c text)"])
+           val _ = SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
+           val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
+           val res = S.step(db)
+       in res == SQLITE_DONE
+       end),
 
-    It "can finalize a stepped-through statement" (
-        fn _ =>
-           let val db = givenTable (concat ["create table t ",
-                                            "(a int, b double, c text)"])
-               val SQLITE_OK = S.prepare(db, "insert into t values (?,?,?)")
-               val true = S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-               val SQLITE_DONE = S.step(db)
-               val res = S.finalize(db)
-           in res == SQLITE_OK
-           end),
+  It "can finalize a stepped-through statement" (
+    fn _ =>
+       let val db = givenTable (concat ["create table t ",
+                                        "(a int, b double, c text)"])
+           val _ = SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
+           val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
+           val _ = SQLITE_DONE =?= S.step(db)
+           val res = S.finalize(db)
+       in res == SQLITE_OK
+       end),
 
-    It "can step as many times as there are rows in result" (
-        fn _ =>
-           let
-               val db = givenTable ("create table t (a int, b double, c text)")
-               fun insert (i, d, t) = (
-                   S.prepare(db, "insert into t values (?,?,?)");
-                   S.bind(db, [S.SqlInt i, S.SqlDouble d, S.SqlText t]);
-                   S.step(db));
+  It "can step as many times as there are rows in result" (
+    fn _ =>
+       let
+         val db = givenTable ("create table t (a int, b double, c text)")
+         fun insert (i, d, t) = (
+           S.prepare(db, "insert into t values (?,?,?)");
+           S.bind(db, [S.SqlInt i, S.SqlDouble d, S.SqlText t]);
+           S.step(db));
 
-               val _ = (insert (1,   2.0, "a");
-                        insert (10,  20.0, "b");
-                        insert (100, 200.0, "c"));
-               val SQLITE_OK = S.finalize(db)
+         val _ = (insert (1,   2.0, "a");
+                  insert (10,  20.0, "b");
+                  insert (100, 200.0, "c"))
+         val _ = SQLITE_OK =?= S.finalize(db)
 
-               val SQLITE_OK = S.prepare(db, "select * from t");
-               val a = S.step(db);
-               val b = S.step(db);
-               val c = S.step(db);
-               val d = S.step(db);
+         val _ = SQLITE_OK =?= S.prepare(db, "select * from t")
+         val a = S.step(db);
+         val b = S.step(db);
+         val c = S.step(db);
+         val d = S.step(db);
 
-           in (a,b,c,d) == (SQLITE_ROW,SQLITE_ROW,SQLITE_ROW,SQLITE_DONE)
-           end
-    )
+       in (a,b,c,d) == (SQLITE_ROW,SQLITE_ROW,SQLITE_ROW,SQLITE_DONE)
+       end
+  )
 
 ]
 
-
-
 val runQueryTests = [
-    It "can insert in one go" (
-        fn _=>
-           let val db = givenTable "create table t (a int, b double, c text)";
-               val res = S.runQuery "insert into t values (?,?,?)" [
-                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
-           in length res == 0 end
-    ),
+  It "can insert in one go" (
+    fn _=>
+       let val db = givenTable "create table t (a int, b double, c text)";
+           val res = S.runQuery "insert into t values (?,?,?)" [
+                 S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
+       in length res == 0 end
+  ),
 
-    It "can read a row" (
-        fn _=>
-           let val db = givenTable "create table f (a int, b double, c text)";
-               val _ = S.runQuery "insert into f values (?,?,?)" [
-                       S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "\226\141\186\226\141\181"] db;
-               val res = S.runQuery "select * from f" [] db;
-               val (row::[]) = res
-           in case row of
-                  [S.SqlInt 1, S.SqlDouble _, S.SqlText "\226\141\186\226\141\181"] => succeed "selected"
-                | other => fail ("failed:" ^ (PolyML.makestring other))
-           end
-    )
+  It "can read a row" (
+    fn _=>
+       let val db = givenTable "create table f (a int, b double, c text)";
+           val _ = S.runQuery "insert into f values (?,?,?)" [
+                 S.SqlInt 1,
+                 S.SqlDouble 2.0,
+                 S.SqlText "\226\141\186\226\141\181"] db;
+           val res = S.runQuery "select * from f" [] db;
+           val _ = 1 =?= length res
+       in case hd(res) of
+              [S.SqlInt 1,
+               S.SqlDouble _,
+               S.SqlText "\226\141\186\226\141\181"] => succeed "selected"
+            | other => fail ("failed:" ^ (PolyML.makestring other))
+       end
+  ),
+
+  It "can read a row (unicode literal)" (
+    fn _=>
+       let val db = givenTable "create table f (a int, b double, c text)";
+           val _ = S.runQuery "insert into f values (?,?,?)" [
+                 S.SqlInt 1,
+                 S.SqlDouble 2.0,
+                 S.SqlText "こんにちは、世界"] db;
+           val res = S.runQuery "select * from f" [] db;
+           val _ = 1 =?= length res
+       in case hd(res) of
+              [S.SqlInt 1,
+               S.SqlDouble _,
+               S.SqlText "こんにちは、世界"] => succeed "selected"
+            | other => fail ("failed:" ^ (PolyML.makestring other))
+       end
+  )
 
 ]
 
