@@ -231,8 +231,24 @@ val runQueryTests = [
                S.SqlDouble _,
                S.SqlText "こんにちは、世界"] => succeed "selected"
             | other => fail ("failed:" ^ (PolyML.makestring other))
+       end),
+
+  It "can read a row with a BLOB" (
+    fn _=>
+       let val db = givenTable "create table f (a int, b blob)"
+           val v = Word8Vector.tabulate(1024*1024, Word8.fromInt)
+           val _ = S.runQuery "insert into f values (?,?)" [
+                 S.SqlInt 1024,
+                 S.SqlBlob v] db;
+           val res = S.runQuery "select * from f" [] db;
+           val _ = 1 =?= length res
+       in case hd(res) of
+              [S.SqlInt 1024,
+               S.SqlBlob v] => succeed "selected"
+            | other => fail ("failed:" ^ (PolyML.makestring other))
        end
   )
+
 
 ]
 

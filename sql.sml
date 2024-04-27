@@ -104,7 +104,7 @@ val cSqliteResultCode : sqliteResultCode conversion = makeConversion
       }
 
 val c_openDb = buildCall2 (sym "sqlite3_open", (cString, cStar cPointer), cSqliteResultCode);
-val c_close = buildCall1 (sym "sqlite3_close", cPointer, cSqliteResultCode);
+val c_close = buildCall1 (sym "sqlite3_close_v2", cPointer, cSqliteResultCode);
 val c_prepare = buildCall6 (sym "sqlite3_prepare_v3",
                             (cPointer, cString, cInt, cUint, cStar cPointer, cStar cPointer),
                             cSqliteResultCode);
@@ -152,9 +152,10 @@ fun openDb (filename : string) : (sqliteResultCode * db option) =
     end
 
 fun close ({dbHandle,stmt,...} : db) : sqliteResultCode =
+    (* dbHandle is freed by poly on GC, but we should free stmt *)
     let val res = c_close (!dbHandle)
     in if res = SQLITE_OK
-       then res before (app Memory.free [!dbHandle, !stmt])
+       then res before (app Memory.free [!stmt])
        else res
     end
 
@@ -174,7 +175,7 @@ fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
       | SqlInt64 i => c_bindInt64(!stmt, idx, i)
       | SqlDouble f => c_bindDouble(!stmt, idx, f)
       | SqlText s => c_bindText(!stmt, idx, s, ~1 (* up to NUL *), ~1 (* Transient *))
-      | SqlBlob v => c_bindBlob(!stmt, idx, v, ~1, ~1)
+      | SqlBlob v => c_bindBlob(!stmt, idx, v, Word8Vector.length v, ~1)
       | SqlNull => c_bindNull(!stmt, idx);
 
 fun bind (db : db, values : value list) : bool =
@@ -196,18 +197,21 @@ and getColumns (stmt, idx, total, acc) : value list =
                 SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
               | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
               | SQLITE_TEXT => SqlText (readText (stmt, idx))
-              | SQLITE_BLOB => raise (Fail "BLOB not supported right now")
+              | SQLITE_BLOB => SqlBlob (readBlob (stmt, idx))
               | SQLITE_NULL => SqlNull
     in if idx = total-1
        then rev (thisColumn::acc)
        else getColumns(stmt, idx+1, total, thisColumn::acc)
     end
-and readText (stmt: stmt, idx : int) : string =
+and readBlob (stmt: stmt, idx : int) : Word8Vector.vector =
     let val size = c_columnBytes(!stmt, idx)
         val mem = c_columnText(!stmt, idx)
         val getEl = fn idx => Memory.get8(mem, Word.fromInt(idx))
-    in Byte.bytesToString (Word8Vector.tabulate(size, getEl))
+    in Word8Vector.tabulate(size, getEl)
     end
+and readText (stmt: stmt, idx : int) : string =
+    Byte.bytesToString (readBlob (stmt, idx))
+
 
 fun stepThrough (db as {stmt,...}: db, acc : value list list) =
     case step(db) of
