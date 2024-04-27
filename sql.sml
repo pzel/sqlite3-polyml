@@ -161,7 +161,6 @@ fun finalize ({stmt,...} : db) : sqliteResultCode = c_finalize(!stmt);
 fun bindParameterCount ({stmt,...} : db) : int =
     c_bindParameterCount(!stmt);
 
-(* private, let's use opaque modules for this later *)
 fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
     case value of
         SqlInt i => c_bindInt(!stmt, idx, i)
@@ -179,7 +178,6 @@ fun bind (db : db, values : value list) : bool =
         List.all (fn r => r = SQLITE_OK) res
     end
 
-(* helpers for high-level interface *)
 fun getRes (stmt : stmt) : value list =
     case c_columnCount(!stmt) of
         0 => []

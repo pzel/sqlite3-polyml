@@ -22,7 +22,14 @@ val openCloseTests = [
            let val (SQLITE_OK, SOME db) = S.openDb(freshName())
                val res = S.close(db)
            in res == SQLITE_OK
-           end)
+           end),
+
+    It "can't open a file it doesn't own" (
+        fn _ =>
+           case S.openDb "/dev/mem" of
+               (SQLITE_OK, SOME _) => fail "opened bad file"
+             | (res, NONE) => res == SQLITE_CANTOPEN)
+
 ];
 
 val statementTests = [
