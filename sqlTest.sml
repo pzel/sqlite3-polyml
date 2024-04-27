@@ -65,6 +65,13 @@ val statementTests = [
        in res == SQLITE_DONE
        end),
 
+  It "cannot prepare a statement that is invalid SQL" (
+    fn _ =>
+       let val db = givenDb ()
+           val res = S.prepare(db, "hello world")
+       in res == SQLITE_ERROR
+       end),
+
   It "can finalize a statement" (
     fn _ =>
        let val db = givenDb ()
