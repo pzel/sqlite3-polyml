@@ -13,23 +13,29 @@ fun freshName () : string =
 val openCloseTests = [
     It "can open a db file" (
         fn _ =>
-           let val (res, db) = S.openDb(freshName())
-           in res == SQLITE_OK
-           end),
+           case S.openDb(freshName()) of
+               (SQLITE_OK, SOME _) => succeed "opened db"
+             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
     It "can close a db file" (
         fn _ =>
-           let val (SQLITE_OK, SOME db) = S.openDb(freshName())
-               val res = S.close(db)
-           in res == SQLITE_OK
-           end),
+           case S.openDb(freshName()) of
+               (SQLITE_OK, SOME db) => SQLITE_OK == S.close db
+             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
+
+    It "cannot close a db file multiple times" (
+        fn _ =>
+           case S.openDb(freshName()) of
+               (SQLITE_OK, SOME db) =>
+               [SQLITE_OK,SQLITE_MISUSE,SQLITE_MISUSE] == [
+                 S.close db, S.close db, S.close db]
+             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
     It "can't open a file it doesn't own" (
         fn _ =>
            case S.openDb "/dev/mem" of
                (SQLITE_OK, SOME _) => fail "opened bad file"
              | (res, NONE) => res == SQLITE_CANTOPEN)
-
 ];
 
 val statementTests = [
