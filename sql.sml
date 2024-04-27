@@ -133,7 +133,7 @@ type stmt = Memory.voidStar ref;
 
 (* Signature interface below *)
 
-type db = {dbHandle: Memory.voidStar ref, stmt: stmt, values: Memory.voidStar ref list}
+type db = {dbHandle: Memory.voidStar ref, stmt: stmt}
 datatype value = SqlInt of int
                  | SqlInt64 of int
                  | SqlDouble of real
@@ -144,12 +144,16 @@ fun openDb (filename : string) : (sqliteResultCode * db option) =
     let val dbH = ref (Memory.malloc 0w0);
         val res = c_openDb (filename, dbH);
     in if res = SQLITE_OK
-       then (res, SOME {dbHandle=dbH, stmt=ref (Memory.malloc 0w0), values=[]})
+       then (res, SOME {dbHandle=dbH, stmt=ref (Memory.malloc 0w0)})
        else (res, NONE) before Memory.free (!dbH)
     end
 
-fun close ({dbHandle,...} : db) : sqliteResultCode =
-    c_close (!dbHandle);
+fun close ({dbHandle,stmt,...} : db) : sqliteResultCode =
+    let val res = c_close (!dbHandle)
+    in if res = SQLITE_OK
+       then res before (app Memory.free [!dbHandle, !stmt])
+       else res
+    end
 
 fun prepare ({dbHandle,stmt,...} : db, input : string) : sqliteResultCode =
     c_prepare(!dbHandle, input, ~1, 0, stmt, ref Memory.null);
