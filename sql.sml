@@ -200,9 +200,8 @@ and getColumns (stmt, idx, total, acc) : value list =
 and readText (stmt: stmt, idx : int) : string =
     let val size = c_columnBytes(!stmt, idx)
         val mem = c_columnText(!stmt, idx)
-        val getEl = fn idx => Char.chr(Word8.toInt(Memory.get8(mem, Word.fromInt(idx))))
-        val rawBytes = List.tabulate(size, getEl)
-    in String.implode rawBytes
+        val getEl = fn idx => Memory.get8(mem, Word.fromInt(idx))
+    in Byte.bytesToString (Word8Vector.tabulate(size, getEl))
     end
 
 fun stepThrough (db as {stmt,...}: db, acc : value list list) =

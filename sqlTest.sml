@@ -131,6 +131,7 @@ val bindTests = [
            val res = S.bind(db, [S.SqlNull, S.SqlNull, S.SqlNull])
        in res == true
        end)
+
 ]
 
 val stepTests = [
