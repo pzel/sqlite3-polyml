@@ -40,6 +40,7 @@ signature SQLITE3 = sig
                    | SqlInt64 of int
                    | SqlDouble of real
                    | SqlText of string
+                   | SqlBlob of Word8Vector.vector
                    | SqlNull;
 
     val openDb : string -> (sqliteResultCode * db option);
@@ -118,6 +119,7 @@ val c_bindInt = buildCall3 (sym "sqlite3_bind_int", (cPointer, cInt, cInt32), cS
 val c_bindInt64 = buildCall3 (sym "sqlite3_bind_int64", (cPointer, cInt, cInt64), cSqliteResultCode);
 val c_bindDouble = buildCall3 (sym "sqlite3_bind_double", (cPointer, cInt, cDouble), cSqliteResultCode);
 val c_bindText = buildCall5 (sym "sqlite3_bind_text", (cPointer,cInt,cString,cInt,cInt), cSqliteResultCode);
+val c_bindBlob = buildCall5 (sym "sqlite3_bind_blob", (cPointer,cInt,cByteArray,cInt,cInt), cSqliteResultCode);
 val c_bindNull = buildCall2 (sym "sqlite3_bind_null", (cPointer, cInt), cSqliteResultCode);
 
 val c_columnBlob = buildCall2 (sym "sqlite3_column_blob", (cPointer, cInt), cPointer);
@@ -138,6 +140,7 @@ datatype value = SqlInt of int
                  | SqlInt64 of int
                  | SqlDouble of real
                  | SqlText of string
+                 | SqlBlob of Word8Vector.vector
                  | SqlNull
 
 fun openDb (filename : string) : (sqliteResultCode * db option) =
@@ -171,6 +174,7 @@ fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
       | SqlInt64 i => c_bindInt64(!stmt, idx, i)
       | SqlDouble f => c_bindDouble(!stmt, idx, f)
       | SqlText s => c_bindText(!stmt, idx, s, ~1 (* up to NUL *), ~1 (* Transient *))
+      | SqlBlob v => c_bindBlob(!stmt, idx, v, ~1, ~1)
       | SqlNull => c_bindNull(!stmt, idx);
 
 fun bind (db : db, values : value list) : bool =
@@ -187,12 +191,13 @@ fun getRes (stmt : stmt) : value list =
         0 => []
       | n => getColumns(stmt,0,n,[])
 and getColumns (stmt, idx, total, acc) : value list =
-    let val thisColumn = case c_columnType(!stmt, idx) of
-                             SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
-                           | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
-                           | SQLITE_TEXT => SqlText (readText (stmt, idx))
-                           | SQLITE_BLOB => raise (Fail "BLOB not supported right now")
-                           | SQLITE_NULL => SqlNull
+    let val thisColumn =
+            case c_columnType(!stmt, idx) of
+                SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
+              | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
+              | SQLITE_TEXT => SqlText (readText (stmt, idx))
+              | SQLITE_BLOB => raise (Fail "BLOB not supported right now")
+              | SQLITE_NULL => SqlNull
     in if idx = total-1
        then rev (thisColumn::acc)
        else getColumns(stmt, idx+1, total, thisColumn::acc)

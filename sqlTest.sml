@@ -124,6 +124,15 @@ val bindTests = [
        in res == true
        end),
 
+  It "can bind Blob values" (
+    fn _ =>
+       let val db = givenTable "create table t (b blob)";
+           val res = S.prepare(db, "insert into t values (?)")
+           val vec = Word8Vector.fromList([0w0,0w1,0w2,0w3])
+           val res = S.bind(db, [S.SqlBlob vec])
+       in res == true
+       end),
+
   It "can bind NULL values" (
     fn _ =>
        let val db = givenTable "create table t (a int, b double, c text)";
