@@ -188,19 +188,20 @@ and getColumns (stmt, idx, total, acc) : value list =
     let val thisColumn = case c_columnType(!stmt, idx) of
                              SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
                            | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
-                           | SQLITE_TEXT => SqlText (readText (c_columnText (!stmt, idx)) [])
+                           | SQLITE_TEXT => SqlText (readText (stmt, idx))
                            | SQLITE_BLOB => raise (Fail "BLOB not supported right now")
                            | SQLITE_NULL => SqlNull
     in if idx = total-1
        then rev (thisColumn::acc)
        else getColumns(stmt, idx+1, total, thisColumn::acc)
     end
-and readText (addr: Memory.voidStar) (acc : char list) : string =
-    (* there should be a better way to do this *)
-    case Memory.get8(addr, 0w0) of
-        0w0 => String.implode (rev acc)
-      | c => readText(Memory.++(addr,0w1)) (Char.chr(Word8.toInt(c))::acc)
-
+and readText (stmt: stmt, idx : int) : string =
+    let val size = c_columnBytes(!stmt, idx)
+        val mem = c_columnText(!stmt, idx)
+        val getEl = fn idx => Char.chr(Word8.toInt(Memory.get8(mem, Word.fromInt(idx))))
+        val rawBytes = List.tabulate(size, getEl)
+    in String.implode rawBytes
+    end
 
 fun stepThrough (db as {stmt,...}: db, acc : value list list) =
     case step(db) of
