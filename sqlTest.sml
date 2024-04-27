@@ -12,7 +12,7 @@ fun freshName () : string =
 fun givenDb () : db =
     case S.openDb(freshName()) of
         (SQLITE_OK, SOME db) => db
-     | _ => raise (Fail "givenDb: failed to open db")
+      | _ => raise (Fail "givenDb: failed to open db")
 
 fun givenTable (ddl : string) =
     let val db = givenDb ()
@@ -23,107 +23,107 @@ fun givenTable (ddl : string) =
     end;
 
 val openCloseTests = [
-    It "can open a db file" (
-        fn _ =>
-           case S.openDb(freshName()) of
-               (SQLITE_OK, SOME _) => succeed "opened db"
-             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
+  It "can open a db file" (
+    fn _ =>
+       case S.openDb(freshName()) of
+           (SQLITE_OK, SOME _) => succeed "opened db"
+         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
-    It "can close a db file" (
-        fn _ =>
-           case S.openDb(freshName()) of
-               (SQLITE_OK, SOME db) => SQLITE_OK == S.close db
-             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
+  It "can close a db file" (
+    fn _ =>
+       case S.openDb(freshName()) of
+           (SQLITE_OK, SOME db) => SQLITE_OK == S.close db
+         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
-    It "cannot close a db file multiple times" (
-        fn _ =>
-           case S.openDb(freshName()) of
-               (SQLITE_OK, SOME db) =>
-               [SQLITE_OK,SQLITE_MISUSE,SQLITE_MISUSE] == [
-                 S.close db, S.close db, S.close db]
-             | other => fail ("failed to open: " ^ (PolyML.makestring other))),
+  It "cannot close a db file multiple times" (
+    fn _ =>
+       case S.openDb(freshName()) of
+           (SQLITE_OK, SOME db) =>
+           [SQLITE_OK,SQLITE_MISUSE,SQLITE_MISUSE] == [
+             S.close db, S.close db, S.close db]
+         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
-    It "can't open a file it doesn't own" (
-        fn _ =>
-           case S.openDb "/dev/mem" of
-               (SQLITE_OK, SOME _) => fail "opened bad file"
-             | (res, NONE) => res == SQLITE_CANTOPEN
-             | _ => fail "something bad happened")
+  It "can't open a file it doesn't own" (
+    fn _ =>
+       case S.openDb "/dev/mem" of
+           (SQLITE_OK, SOME _) => fail "opened bad file"
+         | (res, NONE) => res == SQLITE_CANTOPEN
+         | _ => fail "something bad happened")
 ];
 
 val statementTests = [
-    It "can prepare a statement" (
-      fn _ => S.prepare(givenDb(), "create table t (v int)")
-                       == SQLITE_OK),
+  It "can prepare a statement" (
+    fn _ => S.prepare(givenDb(), "create table t (v int)")
+                     == SQLITE_OK),
 
-    It "can step a statement and get SQLITE_DONE when its done" (
-        fn _ =>
-           let val db = givenDb ()
-               val r = S.prepare(db, "create table t (v int)")
-               val _ = (r == SQLITE_OK)
-               val res = S.step(db)
-           in res == SQLITE_DONE
-           end),
+  It "can step a statement and get SQLITE_DONE when its done" (
+    fn _ =>
+       let val db = givenDb ()
+           val r = S.prepare(db, "create table t (v int)")
+           val _ = (r == SQLITE_OK)
+           val res = S.step(db)
+       in res == SQLITE_DONE
+       end),
 
-    It "can finalize a statement" (
-        fn _ =>
-           let val db = givenDb ()
-               val _ = SQLITE_OK =?= S.prepare(db, "create table t (v int)")
-               val _ = SQLITE_DONE =?= S.step(db);
-               val res = S.finalize(db);
-           in res == SQLITE_OK
-           end)
+  It "can finalize a statement" (
+    fn _ =>
+       let val db = givenDb ()
+           val _ = SQLITE_OK =?= S.prepare(db, "create table t (v int)")
+           val _ = SQLITE_DONE =?= S.step(db);
+           val res = S.finalize(db);
+       in res == SQLITE_OK
+       end)
 
 ];
 
 val bindTests = [
-    It "can get a bind parameter count" (
-        fn _ =>
-           let val db = givenTable "create table t (i int, j int)";
-               val res = S.prepare(db, "insert into t values (?,?)")
-               val count = S.bindParameterCount(db)
-           in count == 2
-           end),
+  It "can get a bind parameter count" (
+    fn _ =>
+       let val db = givenTable "create table t (i int, j int)";
+           val res = S.prepare(db, "insert into t values (?,?)")
+           val count = S.bindParameterCount(db)
+       in count == 2
+       end),
 
-    It "can bind two integer values" (
-        fn _ =>
-           let val db = givenTable "create table t (i int, j int)";
-               val res = S.prepare(db, "insert into t values (?,?)")
-               val res = S.bind(db, [S.SqlInt 0, S.SqlInt 3])
-           in res == true
-           end),
+  It "can bind two integer values" (
+    fn _ =>
+       let val db = givenTable "create table t (i int, j int)";
+           val res = S.prepare(db, "insert into t values (?,?)")
+           val res = S.bind(db, [S.SqlInt 0, S.SqlInt 3])
+       in res == true
+       end),
 
-    It "can bind int64 values" (
-        fn _ =>
-           let val db = givenTable "create table t (i int, j int)";
-               val res = S.prepare(db, "insert into t values (?,?)")
-               val res = S.bind(db, [S.SqlInt64 0, S.SqlInt64 3])
-           in res == true
-           end),
+  It "can bind int64 values" (
+    fn _ =>
+       let val db = givenTable "create table t (i int, j int)";
+           val res = S.prepare(db, "insert into t values (?,?)")
+           val res = S.bind(db, [S.SqlInt64 0, S.SqlInt64 3])
+       in res == true
+       end),
 
-    It "can bind double values" (
-        fn _ =>
-           let val db = givenTable "create table t (p double, q double)";
-               val res = S.prepare(db, "insert into t values (?,?)")
-               val res = S.bind(db, [S.SqlDouble 0.0, S.SqlDouble 30.0])
-           in res == true
-           end),
+  It "can bind double values" (
+    fn _ =>
+       let val db = givenTable "create table t (p double, q double)";
+           val res = S.prepare(db, "insert into t values (?,?)")
+           val res = S.bind(db, [S.SqlDouble 0.0, S.SqlDouble 30.0])
+       in res == true
+       end),
 
-    It "can bind text values" (
-        fn _ =>
-           let val db = givenTable "create table t (t text, u text, v text)";
-               val res = S.prepare(db, "insert into t values (?,?,?)")
-               val res = S.bind(db, [S.SqlText "a", S.SqlText "b", S.SqlText "c"])
-           in res == true
-           end),
+  It "can bind text values" (
+    fn _ =>
+       let val db = givenTable "create table t (t text, u text, v text)";
+           val res = S.prepare(db, "insert into t values (?,?,?)")
+           val res = S.bind(db, [S.SqlText "a", S.SqlText "b", S.SqlText "c"])
+       in res == true
+       end),
 
-    It "can bind NULL values" (
-        fn _ =>
-           let val db = givenTable "create table t (a int, b double, c text)";
-               val res = S.prepare(db, "insert into t values (?,?,?)")
-               val res = S.bind(db, [S.SqlNull, S.SqlNull, S.SqlNull])
-           in res == true
-           end)
+  It "can bind NULL values" (
+    fn _ =>
+       let val db = givenTable "create table t (a int, b double, c text)";
+           val res = S.prepare(db, "insert into t values (?,?,?)")
+           val res = S.bind(db, [S.SqlNull, S.SqlNull, S.SqlNull])
+       in res == true
+       end)
 ]
 
 val stepTests = [
