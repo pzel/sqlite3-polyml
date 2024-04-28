@@ -64,7 +64,6 @@ val libsqlite3 = loadLibrary "libsqlite3.so";
 val sym = getSymbol libsqlite3;
 open SqliteCodes;
 
-
 datatype sqliteType =
          SQLITE_INTEGER
        | SQLITE_FLOAT

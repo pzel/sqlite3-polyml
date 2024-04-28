@@ -2,23 +2,22 @@ use "assert.sml";
 use "sql.sml";
 
 structure S = Sqlite3
-open Sqlite3 (* for error codes *)
 
 fun freshName () : string =
     concat [ "tmp/"
            , (LargeInt.toString o Time.toNanoseconds) (Time.now())
            , ".sqlite"];
 
-fun givenDb () : db =
+fun givenDb () : S.db =
     case S.openDb(freshName()) of
-        (SQLITE_OK, SOME db) => db
+        (S.SQLITE_OK, SOME db) => db
       | _ => raise (Fail "givenDb: failed to open db")
 
 fun givenTable (ddl : string) =
     let val db = givenDb ()
-        val ok = SQLITE_OK =?= S.prepare(db, ddl)
-        val done = SQLITE_DONE =?= S.step(db)
-        val ok = SQLITE_OK =?= S.finalize(db)
+        val ok = S.SQLITE_OK =?= S.prepare(db, ddl)
+        val done = S.SQLITE_DONE =?= S.step(db)
+        val ok = S.SQLITE_OK =?= S.finalize(db)
     in db
     end;
 
@@ -26,59 +25,59 @@ val openCloseTests = [
   It "can open a db file" (
     fn _ =>
        case S.openDb(freshName()) of
-           (SQLITE_OK, SOME _) => succeed "opened db"
+           (S.SQLITE_OK, SOME _) => succeed "opened db"
          | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
   It "can close a db file" (
     fn _ =>
        case S.openDb(freshName()) of
-           (SQLITE_OK, SOME db) => SQLITE_OK == S.close db
+           (S.SQLITE_OK, SOME db) => S.SQLITE_OK == S.close db
          | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
   It "cannot close a db file multiple times" (
     fn _ =>
        case S.openDb(freshName()) of
-           (SQLITE_OK, SOME db) =>
-           [SQLITE_OK,SQLITE_MISUSE,SQLITE_MISUSE] == [
+           (S.SQLITE_OK, SOME db) =>
+           [S.SQLITE_OK,S.SQLITE_MISUSE,S.SQLITE_MISUSE] == [
              S.close db, S.close db, S.close db]
          | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
   It "can't open a file it doesn't own" (
     fn _ =>
        case S.openDb "/dev/mem" of
-           (SQLITE_OK, SOME _) => fail "opened bad file"
-         | (res, NONE) => res == SQLITE_CANTOPEN
+           (S.SQLITE_OK, SOME _) => fail "opened bad file"
+         | (res, NONE) => res == S.SQLITE_CANTOPEN
          | _ => fail "something bad happened")
 ];
 
 val statementTests = [
   It "can prepare a statement" (
     fn _ => S.prepare(givenDb(), "create table t (v int)")
-                     == SQLITE_OK),
+                     == S.SQLITE_OK),
 
-  It "can step a statement and get SQLITE_DONE when its done" (
+  It "can step a statement and get S.SQLITE_DONE when its done" (
     fn _ =>
        let val db = givenDb ()
            val r = S.prepare(db, "create table t (v int)")
-           val _ = (r == SQLITE_OK)
+           val _ = (r == S.SQLITE_OK)
            val res = S.step(db)
-       in res == SQLITE_DONE
+       in res == S.SQLITE_DONE
        end),
 
   It "cannot prepare a statement that is invalid SQL" (
     fn _ =>
        let val db = givenDb ()
            val res = S.prepare(db, "hello world")
-       in res == SQLITE_ERROR
+       in res == S.SQLITE_ERROR
        end),
 
   It "can finalize a statement" (
     fn _ =>
        let val db = givenDb ()
-           val _ = SQLITE_OK =?= S.prepare(db, "create table t (v int)")
-           val _ = SQLITE_DONE =?= S.step(db);
+           val _ = S.SQLITE_OK =?= S.prepare(db, "create table t (v int)")
+           val _ = S.SQLITE_DONE =?= S.step(db);
            val res = S.finalize(db);
-       in res == SQLITE_OK
+       in res == S.SQLITE_OK
        end)
 
 ];
@@ -148,21 +147,21 @@ val stepTests = [
     fn _ =>
        let val db = givenTable (concat ["create table t ",
                                         "(a int, b double, c text)"])
-           val _ = SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
+           val _ = S.SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
            val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
            val res = S.step(db)
-       in res == SQLITE_DONE
+       in res == S.SQLITE_DONE
        end),
 
   It "can finalize a stepped-through statement" (
     fn _ =>
        let val db = givenTable (concat ["create table t ",
                                         "(a int, b double, c text)"])
-           val _ = SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
+           val _ = S.SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
            val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-           val _ = SQLITE_DONE =?= S.step(db)
+           val _ = S.SQLITE_DONE =?= S.step(db)
            val res = S.finalize(db)
-       in res == SQLITE_OK
+       in res == S.SQLITE_OK
        end),
 
   It "can step as many times as there are rows in result" (
@@ -177,15 +176,15 @@ val stepTests = [
          val _ = (insert (1,   2.0, "a");
                   insert (10,  20.0, "b");
                   insert (100, 200.0, "c"))
-         val _ = SQLITE_OK =?= S.finalize(db)
+         val _ = S.SQLITE_OK =?= S.finalize(db)
 
-         val _ = SQLITE_OK =?= S.prepare(db, "select * from t")
+         val _ = S.SQLITE_OK =?= S.prepare(db, "select * from t")
          val a = S.step(db);
          val b = S.step(db);
          val c = S.step(db);
          val d = S.step(db);
 
-       in (a,b,c,d) == (SQLITE_ROW,SQLITE_ROW,SQLITE_ROW,SQLITE_DONE)
+       in (a,b,c,d) == (S.SQLITE_ROW,S.SQLITE_ROW,S.SQLITE_ROW,S.SQLITE_DONE)
        end
   )
 
@@ -252,14 +251,13 @@ val runQueryTests = [
   It "returns proper codes on constraint violation" (
     fn _=>
        let val db = givenTable "create table f (a int)"
-           val r0 = SQLITE_OK =?= (S.execute "create unique index fi on f (a)" db)
-           val r1 = SQLITE_OK =?= (S.execute "insert into f values (1)" db)
+           val r0 = S.SQLITE_OK =?= (S.execute "create unique index fi on f (a)" db)
+           val r1 = S.SQLITE_OK =?= (S.execute "insert into f values (1)" db)
            val r2 = S.execute "insert into f values (1)" db
-       in r2 == SQLITE_CONSTRAINT
+       in r2 == S.SQLITE_CONSTRAINT
        end)
 
 ]
-
 
 fun main () =
     let val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
