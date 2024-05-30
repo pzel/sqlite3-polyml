@@ -1,114 +1,108 @@
-local
-  exception TestOK of string * string;
-  exception TestErr of string * string;
-  type raises_OK_or_ERR = unit
-in
-infixr 2 == != =/= =?=
-type testresult = (string * int);
-datatype tcase =
-   T of (unit -> raises_OK_or_ERR)
- | IT of (string * (unit -> raises_OK_or_ERR))
+signature ASSERT = sig
+  type testresult = (string * bool);
+  type tcase;
+  type raisesTestExn;
+  val It : string -> (unit -> raisesTestExn) -> tcase;
+  val T : (unit -> raisesTestExn) -> tcase;
+  val succeed : string -> raisesTestExn;
+  val fail : string -> raisesTestExn;
+  val == : (''a * ''a) -> raisesTestExn;
+  val =/= : (''a * ''a) -> raisesTestExn;
+  val != : (exn * (unit -> 'z)) -> raisesTestExn;
+  val =?= : (''a * ''a) -> ''a;
+  val runTest : tcase -> testresult;
+  val runTests : tcase list -> unit;
+end
 
-fun It desc tcase = IT(desc, tcase)
 
-fun succeed (msg : string) : raises_OK_or_ERR =
+structure Assert = struct
+
+exception TestOK of string * string;
+exception TestErr of string * string;
+type raisesTestExn = unit;
+datatype raisesTestExn = Never of unit;
+infixr 2 == != =/= =?=;
+
+fun N (a: 'a) : raisesTestExn = Never (ignore a);
+
+type testresult = (string * bool);
+datatype tcase = TC of (string * (unit -> raisesTestExn))
+
+fun It desc tcase = TC(desc, tcase)
+fun T tcase = TC("", tcase)
+
+fun succeed (msg : string) : raisesTestExn =
     raise TestOK (msg, msg)
 
-fun fail (msg : string) : raises_OK_or_ERR =
+fun fail (msg : string) : raisesTestExn =
     raise TestErr (msg, "~explicit fail~")
 
-fun (left : ''a) == (right : ''a) : raises_OK_or_ERR =
-  ignore(if left = right
-         then raise TestOK (PolyML.makestring left, PolyML.makestring right)
-         else raise TestErr (PolyML.makestring left, PolyML.makestring right))
+fun (left : ''a) == (right : ''a) : raisesTestExn =
+    N(if left = right
+           then raise TestOK (PolyML.makestring left, PolyML.makestring right)
+           else raise TestErr (PolyML.makestring left, PolyML.makestring right))
 
-fun (left : ''a) =/= (right : ''a) : raises_OK_or_ERR =
-  ignore(if left = right
-         then raise TestErr (PolyML.makestring left, PolyML.makestring right)
-         else raise TestOK (PolyML.makestring left, PolyML.makestring right))
+fun (left : ''a) =/= (right : ''a) : raisesTestExn =
+    N(if left = right
+           then raise TestErr (PolyML.makestring left, PolyML.makestring right)
+           else raise TestOK (PolyML.makestring left, PolyML.makestring right))
 
-fun (expected : exn) != (f : (unit -> 'z)) : raises_OK_or_ERR =
-  (ignore(ignore(f()) handle e => let val (exp, got) = (exnMessage expected, exnMessage e)
-                                     in if exp = got
-                                        then raise TestOK (exp, got)
-                                        else raise TestErr (exp, got)
-                                     end);
-   (* we ran left() without any errors, which we expected. This is a failure *)
-   raise TestErr (exnMessage expected, "(ran successfully)"))
-
-(*
-  Returns ''a if comparison successful, fails the test otherwise.
-  This is useful to get around match exhaustiveness warnings when doing
-  'assertion-style' match-based testing like in Erlang.
-
-  let val res = (someOp() =?= ALLGOOD)
-
-  The above will fail the test if someOp does not return SOMERES, otherwise it'll
-  bind res to ALLGOOD
-*)
+fun (expected : exn) != (f : (unit -> 'z)) : raisesTestExn =
+    (N(ignore(f())
+            handle e => let val (exp, got) = (exnMessage expected, exnMessage e);
+                        in if exp = got
+                           then raise TestOK (exp, got)
+                           else raise TestErr (exp, got)
+                        end);
+     (* We ran left() without any errors, even though we expected them.
+        This makes the current test case a failure. *)
+     raise TestErr (exnMessage expected, "~ran successfully~"))
 
 fun (left : ''a) =?= (right : ''a) : ''a =
-  if left = right
-  then left
-  else raise (TestErr (PolyML.makestring left, PolyML.makestring right))
+    if left = right
+    then left
+    else raise (TestErr (PolyML.makestring left, PolyML.makestring right))
 
 
-fun ppExn (e : exn) : string =
-    let val loc = PolyML.exceptionLocation e;
-        val locmsg =
-            case loc of
-                SOME l  => [#file l, ":", Int.toString (#startLine l)]
-              | NONE => ["<unknown location>"]
-    in concat (["exception ", exnMessage e, " at: "] @ locmsg)
-    end
 
-fun runTest (T f : tcase) : testresult = runTest (IT ("", f))
-  | runTest ((IT (desc,f)) : tcase) : testresult =
-    let fun fmt (result, data) = String.concat([result, " ", desc, "\n\t", data, "\n"])
+fun runTest ((TC (desc,f)) : tcase) : testresult =
+    let fun fmt (result, data) = String.concat([result, " ", desc, "\n\t", data, "\n"]);
+        fun ppExn (e : exn) : string =
+            let val loc = PolyML.exceptionLocation e;
+                val locmsg =
+                    case loc of
+                        SOME l  => [#file l, ":", Int.toString (#startLine l)]
+                      | NONE => ["<unknown location>"]
+            in concat (["exception ", exnMessage e, " at: "] @ locmsg)
+            end;
     in
-      (f();             (fmt ("ERROR", "~no assertion~"), 1))
+                       (* this outcome is likely unreachable now that raisesTestExn is opaque *)
+      ( f ();             (fmt ("ERROR", "~no assertion in test body~"), false))
       handle
-       TestOK(a,b) =>   (fmt ("OK",  a^" # "^b), 0)
-     | TestErr(a,b) => (fmt ("FAILED", a^" # "^b),  1)
-     | exn =>          (fmt("ERROR", ppExn exn), 1)
+      TestOK(a,b) =>   (fmt ("OK",  a^" = "^b), true)
+      | TestErr(a,b) => (fmt ("FAILED", a^" <> "^b),  false)
+      | exn =>          (fmt("ERROR", ppExn exn), false)
     end
-
-end (* local *)
 
 fun runTests (tests : tcase list) =
-let
-  val results = map runTest tests;
-  val errors = List.filter (fn (_, n) => n = 1) results;
-  val error_count = length errors;
-  val test_count = length results;
-  val p = fn s => ignore(print (s ^"\n"));
-  val i = Int.toString;
-  val error_ratio = concat [i error_count, "/", i test_count];
-  val success_ratio = concat [i test_count, "/", i test_count]
-in
-  if error_count = 0
-  then p ("ALL TESTS PASSED: " ^ success_ratio)
-  else (p "";
-        app (p o #1) errors;
-        p ("\nTESTS FAILED: " ^ error_ratio ^ "\n");
-        OS.Process.exit(OS.Process.failure))
-end;
+    let
+      val results = map runTest tests;
+      val errors = List.filter (fn (_, n) => not n) results;
+      val successes = List.filter (fn (_, n) => n) results;
+      val error_count = length errors;
+      val test_count = length results;
+      val p = fn s => ignore(print (s ^"\n"));
+      val i = Int.toString;
+      val error_ratio = concat [i error_count, "/", i test_count];
+      val success_ratio = concat [i test_count, "/", i test_count]
+    in
+      if error_count = 0
+      then p ("ALL TESTS PASSED: " ^ success_ratio)
+      else (p "";
+            (* app (p o #1) successes; *) (* TODO: make this optional *)
+            app (p o #1) errors;
+            p ("\nTESTS FAILED: " ^ error_ratio ^ "\n");
+            OS.Process.exit(OS.Process.failure))
+    end
 
-exception TestExn of string;
-
-fun main() =
-    runTests
-    (* nice tests *)
-    (* [ T(fn() => 3 + 3 == 6), T(fn() => {a=1} == {a=1})];  *)
-    (* failing tests *)
-     [
-      T(fn () => 3 + 2 == 4),
-      T(fn()=> 3 + 3 == ~1),
-      T(fn()=> {a = "a", b=2} == {a = "A", b=2}),
-      T(fn()=> Subscript != (fn()=> tl(tl[1]))),
-      T(fn()=> Empty != (fn()=> hd [1])),
-      T(fn()=> ignore(2 + 2)),
-      T(fn()=> TestExn("hello") != (fn()=> raise TestExn("hello"))), (*passes*)
-      T(fn()=> TestExn("hellop") != (fn()=> raise TestExn("hello"))), (*fails*)
-      T(fn()=> fail("this should never happen"))
-     ]
+end : ASSERT

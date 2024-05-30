@@ -1,6 +1,9 @@
 use "assert.sml";
 use "sql.sml";
 
+open Assert;
+infixr 2 == =?= != =/=;
+
 structure S = Sqlite3
 
 fun freshName () : string =
