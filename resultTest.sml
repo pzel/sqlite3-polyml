@@ -1,6 +1,9 @@
 use "assert.sml";
 use "result.sml";
 
+open Assert;
+infixr 2 == =?= != =/=;
+
 val resultTests = [
     It "can create an ok value" (
         fn _ => case Result.ok(1) of
