@@ -1,0 +1,11 @@
+(* basis *)
+$(SML_LIB)/basis/basis.mlb
+$(SML_LIB)/basis/poly.mlb
+
+(* SUT *)
+sqlite3.mlb
+
+(* tests *)
+test/assert.sml
+test/sqlTest.sml
+

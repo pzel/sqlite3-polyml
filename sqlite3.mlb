@@ -1,0 +1,10 @@
+local
+  $(SML_LIB)/basis/basis.mlb
+  $(SML_LIB)/basis/poly.mlb
+  src/sqliteCodes.sml
+  src/sqlite3.sml
+in
+  structure SqliteCodes
+  signature SQLITE3
+  structure Sqlite3
+end

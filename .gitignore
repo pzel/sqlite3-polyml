@@ -1,5 +1,4 @@
 a.out
-sqlTest
-resultTest
 *.sql
-tmp/
+tmp/*
+bin/*

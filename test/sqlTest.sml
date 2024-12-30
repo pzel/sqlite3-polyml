@@ -1,5 +1,3 @@
-use "assert.sml";
-use "sql.sml";
 
 open Assert;
 infixr 2 == =?= != =/=;

@@ -1,17 +1,19 @@
-.PHONY: test resultTest testClean
+.PHONY: polymlb test testClean clean
 
-all:	 test
+all:	 clean test
 
-resultTest: $(shell find | grep *.sql) testClean
-	polyc ./$@.sml -o $@ && ./$@
+clean:
+	rm -f bin/*
 
-
-test: $(shell find | grep *.sql) testClean assert.sml
-	polyc ./sqlTest.sml -o sqlTest && ./sqlTest
+test: polymlb $(shell find | grep *.sql) testClean test/assert.sml
+	polymlb -o bin/runTests ./runTests.mlb && ./bin/runTests
 
 testClean:
 	mkdir -p tmp
 	rm -rf ./tmp/*
 
-assert.sml:
-	curl -O https://git.sr.ht/~pzel/assert/blob/master/assert.sml
+test/assert.sml:
+	curl https://git.sr.ht/~pzel/assert/blob/master/assert.sml > $@
+
+polymlb:
+	command -v polymlb

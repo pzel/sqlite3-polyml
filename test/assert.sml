@@ -4,6 +4,7 @@ signature ASSERT = sig
   type raisesTestExn;
   val It : string -> (unit -> raisesTestExn) -> tcase;
   val T : (unit -> raisesTestExn) -> tcase;
+  val Pending : string -> (unit -> raisesTestExn) -> tcase;
   val succeed : string -> raisesTestExn;
   val fail : string -> raisesTestExn;
   val == : (''a * ''a) -> raisesTestExn;
@@ -19,7 +20,6 @@ structure Assert = struct
 
 exception TestOK of string * string;
 exception TestErr of string * string;
-type raisesTestExn = unit;
 datatype raisesTestExn = Never of unit;
 infixr 2 == != =/= =?=;
 
@@ -28,14 +28,15 @@ fun N (a: 'a) : raisesTestExn = Never (ignore a);
 type testresult = (string * bool);
 datatype tcase = TC of (string * (unit -> raisesTestExn))
 
-fun It desc tcase = TC(desc, tcase)
-fun T tcase = TC("", tcase)
-
 fun succeed (msg : string) : raisesTestExn =
-    raise TestOK (msg, msg)
+    N (raise TestOK (msg, msg))
 
 fun fail (msg : string) : raisesTestExn =
-    raise TestErr (msg, "~explicit fail~")
+    N (raise TestErr (msg, "~explicit fail~"))
+
+fun It desc tcase = TC(desc, tcase)
+fun T tcase = TC("", tcase)
+fun Pending desc _ = TC(desc, fn () => succeed "~PENDING~")
 
 fun (left : ''a) == (right : ''a) : raisesTestExn =
     N(if left = right
@@ -64,7 +65,6 @@ fun (left : ''a) =?= (right : ''a) : ''a =
     else raise (TestErr (PolyML.makestring left, PolyML.makestring right))
 
 
-
 fun runTest ((TC (desc,f)) : tcase) : testresult =
     let fun fmt (result, data) = String.concat([result, " ", desc, "\n\t", data, "\n"]);
         fun ppExn (e : exn) : string =
@@ -78,10 +78,9 @@ fun runTest ((TC (desc,f)) : tcase) : testresult =
     in
                        (* this outcome is likely unreachable now that raisesTestExn is opaque *)
       ( f ();             (fmt ("ERROR", "~no assertion in test body~"), false))
-      handle
-      TestOK(a,b) =>   (fmt ("OK",  a^" = "^b), true)
-      | TestErr(a,b) => (fmt ("FAILED", a^" <> "^b),  false)
-      | exn =>          (fmt("ERROR", ppExn exn), false)
+      handle TestOK(a,b) =>  (fmt ("OK",  a^" = "^b), true)
+           | TestErr(a,b) => (fmt ("FAILED", a^" <> "^b),  false)
+           | exn =>          (fmt ("ERROR", ppExn exn), false)
     end
 
 fun runTests (tests : tcase list) =
