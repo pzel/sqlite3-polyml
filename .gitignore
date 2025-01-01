@@ -2,3 +2,7 @@ a.out
 *.sql
 tmp/*
 bin/*
+
+# dependencies managed by smlpkg
+lib/github.com/pzel/assert-polyml
+

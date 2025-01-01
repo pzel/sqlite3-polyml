@@ -1,8 +1,8 @@
 local
   $(SML_LIB)/basis/basis.mlb
   $(SML_LIB)/basis/poly.mlb
-  src/sqliteCodes.sml
-  src/sqlite3.sml
+  sqliteCodes.sml
+  sqlite3.sml
 in
   structure SqliteCodes
   signature SQLITE3

@@ -1,19 +1,12 @@
 .PHONY: polymlb test testClean clean
+LIBDIR := lib/github.com/pzel/sqlite3-polyml
+MLB_PATH := -mlb-path-var 'FOO $(shell pwd)/lib'
 
 all:	 clean test
 
 clean:
-	rm -f bin/*
+	rm -f bin/* tmp/*
 
-test: polymlb $(shell find | grep *.sql) testClean test/assert.sml
-	polymlb -o bin/runTests ./runTests.mlb && ./bin/runTests
+test: polymlb $(shell find $(LIBDIR) | grep *.sql)
+	polymlb $(MLB_PATH) -output bin/runTests $(LIBDIR)/test/runTests.mlb && ./bin/runTests
 
-testClean:
-	mkdir -p tmp
-	rm -rf ./tmp/*
-
-test/assert.sml:
-	curl https://git.sr.ht/~pzel/assert/blob/master/assert.sml > $@
-
-polymlb:
-	command -v polymlb

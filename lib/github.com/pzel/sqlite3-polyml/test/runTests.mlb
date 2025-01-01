@@ -1,11 +1,11 @@
 (* basis *)
 $(SML_LIB)/basis/basis.mlb
 $(SML_LIB)/basis/poly.mlb
+$(FOO)/github.com/pzel/assert-polyml/assert.mlb
 
 (* SUT *)
-sqlite3.mlb
+../sqlite3.mlb
 
 (* tests *)
-test/assert.sml
-test/sqlTest.sml
+sqlTest.sml
 

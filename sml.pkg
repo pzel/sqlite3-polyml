@@ -1,0 +1,5 @@
+package github.com/pzel/sqlite3-polyml
+
+require {
+  github.com/pzel/assert-polyml 0.4.0
+}
