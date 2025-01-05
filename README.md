@@ -1,5 +1,7 @@
 # Sqlite3-polyml
 
+## This is only a toy!
+
 
 This is an FFI binding for libsqlite3, for use in Poly/ML programs.
 
