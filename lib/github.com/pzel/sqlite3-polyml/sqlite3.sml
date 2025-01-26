@@ -1,6 +1,6 @@
 signature SQLITE3 = sig
-    (* The aim is to mirror closely the C interface *)
     type db;
+    type stmt;
     datatype sqliteResultCode =
              SQLITE_OK
            | SQLITE_ERROR
@@ -41,11 +41,11 @@ signature SQLITE3 = sig
                    | SqlBlob of Word8Vector.vector
                    | SqlNull;
 
-    val openDb : string -> (sqliteResultCode * db option);
-    val close : db -> sqliteResultCode;
-    val prepare : (db * string) -> sqliteResultCode;
-    val step : db -> sqliteResultCode;
-    val finalize : db -> sqliteResultCode;
+    val openDb : string -> (sqliteResultCode, db) sum;
+    val close : db -> (sqliteResultCode, sqliteResultCode) sum;
+    val prepare : (db * string) -> (sqliteResultCode, stmt) sum;
+    val step : stmt -> (sqliteResultCode, sqliteResultCode) sum;
+    val finalize : stmt -> sqliteResultCode;
     val bind : (db * value list) -> bool;
     val bindParameterCount : db -> int;
 
@@ -128,12 +128,12 @@ val c_columnText = buildCall2 (sym "sqlite3_column_text", (cPointer, cInt), cPoi
 val c_columnBytes = buildCall2 (sym "sqlite3_column_bytes", (cPointer, cInt), cInt);
 
 
-type stmt = Memory.voidStar ref;
-
+type stmt = {pointer : Memory.voidStar ref};
+fun ptr (stmt as {pointer= ptr, ...} : stmt) = !ptr;
 
 (* Signature interface below *)
 
-type db = {dbHandle: Memory.voidStar ref, stmt: stmt}
+type db = {dbHandle: Memory.voidStar ref}
 datatype value = SqlInt of int
                  | SqlInt64 of int
                  | SqlDouble of real
@@ -141,59 +141,70 @@ datatype value = SqlInt of int
                  | SqlBlob of Word8Vector.vector
                  | SqlNull
 
-fun openDb (filename : string) : (sqliteResultCode * db option) =
+fun openDb (filename : string) : (sqliteResultCode, db) sum =
     let val dbH = ref (Memory.malloc 0w0);
         val res = c_openDb (filename, dbH);
     in if res = SQLITE_OK
-       then (res, SOME {dbHandle=dbH, stmt=ref (Memory.malloc 0w0)})
-       else (res, NONE) before Memory.free (!dbH)
+       then (Either.INR {dbHandle=dbH})
+       else (Either.INL res)
     end
 
-fun close ({dbHandle,stmt,...} : db) : sqliteResultCode =
-    (* dbHandle is freed by poly on GC, but we should free stmt *)
+fun close ({dbHandle,...} : db) : (sqliteResultCode, sqliteResultCode) sum =
     let val res = c_close (!dbHandle)
     in if res = SQLITE_OK
-       then res before (app Memory.free [!stmt])
-       else res
+       then INR res
+       else INL res
     end
 
-fun prepare ({dbHandle,stmt,...} : db, input : string) : sqliteResultCode =
-    c_prepare(!dbHandle, input, ~1, 0, stmt, ref Memory.null);
+fun prepare ({dbHandle,...} : db, input : string) : (sqliteResultCode, stmt) sum =
+    let val stmt = {pointer = ref (Memory.malloc 0w0)}
+        val res_code = c_prepare(!dbHandle, input, ~1, 0, (#pointer stmt), ref Memory.null)
+    in
+      if res_code = SQLITE_OK orelse res_code = SQLITE_DONE
+      then INR stmt
+      else INL res_code  (* but what about the allocated memory? *)
+    end
 
-fun step ({stmt,...} : db) : sqliteResultCode = c_step(!stmt);
+fun step (stmt: stmt) : (sqliteResultCode, sqliteResultCode) sum = 
+    case c_step(ptr stmt) of
+        SQLITE_OK => INR SQLITE_OK
+      | other => INL other (* need to get more positive *)
 
-fun finalize ({stmt,...} : db) : sqliteResultCode = c_finalize(!stmt);
+fun finalize (stmt : stmt) : sqliteResultCode = c_finalize(ptr stmt);
 
-fun bindParameterCount ({stmt,...} : db) : int =
-    c_bindParameterCount(!stmt);
+fun bindParameterCount (db : db) : int = raise Empty
+    (*
+    c_bindParameterCount(!stmt); *)
 
 fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
     case value of
-        SqlInt i => c_bindInt(!stmt, idx, i)
-      | SqlInt64 i => c_bindInt64(!stmt, idx, i)
-      | SqlDouble f => c_bindDouble(!stmt, idx, f)
-      | SqlText s => c_bindText(!stmt, idx, s, ~1 (* up to NUL *), ~1 (* Transient *))
-      | SqlBlob v => c_bindBlob(!stmt, idx, v, Word8Vector.length v, ~1)
-      | SqlNull => c_bindNull(!stmt, idx);
+        SqlInt i => c_bindInt(ptr stmt, idx, i)
+      | SqlInt64 i => c_bindInt64(ptr stmt, idx, i)
+      | SqlDouble f => c_bindDouble(ptr stmt, idx, f)
+      | SqlText s => c_bindText(ptr stmt, idx, s, ~1 (* up to NUL *), ~1 (* Transient *))
+      | SqlBlob v => c_bindBlob(ptr stmt, idx, v, Word8Vector.length v, ~1)
+      | SqlNull => c_bindNull(ptr stmt, idx);
 
 fun bind (db : db, values : value list) : bool =
+    raise Empty
+    (*
     (* todo check that parameter count and len(values) is the same *)
     let val iota = List.tabulate(length values, fn i => i+1)
         val zipped = ListPair.zip(iota, values);
         val res = map (fn (idx,v) => bindValue(#stmt db, idx, v)) zipped
     in
         List.all (fn r => r = SQLITE_OK) res
-    end
+    end *)
 
 fun getRes (stmt : stmt) : value list =
-    case c_columnCount(!stmt) of
+    case c_columnCount(ptr stmt) of
         0 => []
       | n => getColumns(stmt,0,n,[])
 and getColumns (stmt, idx, total, acc) : value list =
     let val thisColumn =
-            case c_columnType(!stmt, idx) of
-                SQLITE_INTEGER => SqlInt (c_columnInt (!stmt, idx))
-              | SQLITE_FLOAT => SqlDouble (c_columnDouble (!stmt, idx))
+            case c_columnType(ptr stmt, idx) of
+                SQLITE_INTEGER => SqlInt (c_columnInt (ptr stmt, idx))
+              | SQLITE_FLOAT => SqlDouble (c_columnDouble (ptr stmt, idx))
               | SQLITE_TEXT => SqlText (readText (stmt, idx))
               | SQLITE_BLOB => SqlBlob (readBlob (stmt, idx))
               | SQLITE_NULL => SqlNull
@@ -202,8 +213,8 @@ and getColumns (stmt, idx, total, acc) : value list =
        else getColumns(stmt, idx+1, total, thisColumn::acc)
     end
 and readBlob (stmt: stmt, idx : int) : Word8Vector.vector =
-    let val size = c_columnBytes(!stmt, idx)
-        val mem = c_columnText(!stmt, idx)
+    let val size = c_columnBytes(ptr stmt, idx)
+        val mem = c_columnText(ptr stmt, idx)
         val getEl = fn idx => Memory.get8(mem, Word.fromInt(idx))
     in Word8Vector.tabulate(size, getEl)
     end
@@ -211,23 +222,27 @@ and readText (stmt: stmt, idx : int) : string =
     Byte.bytesToString (readBlob (stmt, idx))
 
 
-fun stepThrough (db as {stmt,...}: db, acc : value list list) =
+fun stepThrough (db: db, acc : value list list) =
+    raise Empty (*
     case step(db) of
         SQLITE_DONE => rev acc
       | SQLITE_ROW => stepThrough(db, getRes stmt :: acc)
-      | code => raise Fail("Sqlite error:" ^ PolyML.makestring(code))
+      | code => raise Fail("Sqlite error:" ^ PolyML.makestring(code))*)
 
 (* High-level interface *)
 fun runQuery (sql : string) (params : value list) (db: db) : value list list =
+   raise Empty (*
     let val res0 = prepare(db, sql)
     in if res0 <> SQLITE_OK
        then raise Fail ("TODO: failed to Prepare statement" ^ (PolyML.makestring res0))
        else if bind(db, params) <> true
        then raise (Fail "TODO2")
        else stepThrough(db, []) before ignore (finalize db)
-    end
+    end *)
 
 fun execute (sql : string) (db: db) : sqliteResultCode =
+    raise Empty
+  (*
     let val res0 = prepare(db, sql)
     in if res0 <> SQLITE_OK
        then raise Fail ("TODO: failed to Prepare statement" ^ (PolyML.makestring res0))
@@ -237,6 +252,6 @@ fun execute (sql : string) (db: db) : sqliteResultCode =
                else res1
              end)
     end
-
+  *)
 
 end

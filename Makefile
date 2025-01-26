@@ -1,6 +1,6 @@
 .PHONY: polymlb test testClean clean
 LIBDIR := lib/github.com/pzel/sqlite3-polyml
-MLB_PATH := -mlb-path-var 'FOO $(shell pwd)/lib'
+MLB_PATH := -mlb-path-var 'SMLPKG $(shell pwd)/lib'
 
 all:	 clean test
 

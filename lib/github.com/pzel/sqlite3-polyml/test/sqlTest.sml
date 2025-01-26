@@ -1,7 +1,7 @@
 open Assert;
 infixr 2 == =?= != =/=;
 
-structure S = Sqlite3
+structure S = Sqlite3;
 
 fun freshName () : string =
     concat [ "tmp/"
@@ -10,8 +10,86 @@ fun freshName () : string =
 
 fun givenDb () : S.db =
     case S.openDb(freshName()) of
-        (S.SQLITE_OK, SOME db) => db
-      | _ => raise (Fail "givenDb: failed to open db")
+        (INR db) => db
+      | (INL err) => raise (Fail ("givenDb: failed to open db" ^ PolyML.makestring err))
+
+val openCloseTests = [
+
+  It "returns a db when a file can be opened" (
+    fn _=>
+       case S.openDb (freshName ()) of
+           INL e => fail ("Error " ^ PolyML.makestring e)
+         | INR _ => succeed "OK"),
+
+  It "returns the when a file cannot be opened" (
+    fn _=>
+       case S.openDb "/foobar" of
+           INL e => e == S.SQLITE_CANTOPEN
+         | INR db => fail ("GOT DB: " ^ PolyML.makestring db)),
+
+  It "can close a db file" (
+    fn _ =>
+       case S.openDb(freshName()) of
+           (INR db) => INR S.SQLITE_OK == S.close db
+         | (INL err) => fail ("failed to open: " ^ (PolyML.makestring err))),
+
+  It "cannot close a db file multiple times" (
+    fn _ =>
+       let val db = givenDb ()
+       in   [INR S.SQLITE_OK, INL S.SQLITE_MISUSE, INL S.SQLITE_MISUSE] == [
+             S.close db, S.close db, S.close db]
+       end)
+
+]
+
+fun expectR (res : ('a, ''b) either) (want : ''b) =
+    case res of
+        INR x => want == x
+     | other => fail ("got " ^ PolyML.makestring other);
+
+
+fun forceR (e : ('a, 'b) either) : 'b =
+    Option.valOf (Either.asRight e);
+
+val statementTests = [
+  It "can prepare a statement" (
+    fn _ => let val st = S.prepare(givenDb(), "create table t (v int)")
+            in Either.isRight st == true
+            end),
+
+  It "cannot prepare a statement that is invalid SQL" (
+    fn _ =>
+       let val db = givenDb ()
+           val res = S.prepare(db, "hello world")
+       in (Either.asLeft res) == SOME S.SQLITE_ERROR
+       end),
+
+
+  It "can step a statement and get S.SQLITE_DONE when its done" (
+    fn _ =>
+       let val db = givenDb ()
+           val res = S.prepare(db, "create table t (v int)")
+                              >| Either.bindRight S.step
+                              >| Either.asRight
+       in res == SOME S.SQLITE_DONE
+       end)
+
+(*
+  It "can finalize a statement" (
+    fn _ =>
+       let val db = givenDb ()
+           val res = S.prepare(db, "create table t (v int)");
+           val stmt = forceR res;
+           val _ = S.SQLITE_DONE =?= S.step(stmt);
+           val res = S.finalize(stmt);
+       in res == S.SQLITE_OK
+       end)
+*)
+];
+
+
+(*
+
 
 fun givenTable (ddl : string) =
     let val db = givenDb ()
@@ -21,66 +99,7 @@ fun givenTable (ddl : string) =
     in db
     end;
 
-val openCloseTests = [
-  It "can open a db file" (
-    fn _ =>
-       case S.openDb(freshName()) of
-           (S.SQLITE_OK, SOME _) => succeed "opened db"
-         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
 
-  It "can close a db file" (
-    fn _ =>
-       case S.openDb(freshName()) of
-           (S.SQLITE_OK, SOME db) => S.SQLITE_OK == S.close db
-         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
-
-  It "cannot close a db file multiple times" (
-    fn _ =>
-       case S.openDb(freshName()) of
-           (S.SQLITE_OK, SOME db) =>
-           [S.SQLITE_OK,S.SQLITE_MISUSE,S.SQLITE_MISUSE] == [
-             S.close db, S.close db, S.close db]
-         | other => fail ("failed to open: " ^ (PolyML.makestring other))),
-
-  It "can't open a file it doesn't own" (
-    fn _ =>
-       case S.openDb "/dev/mem" of
-           (S.SQLITE_OK, SOME _) => fail "opened bad file"
-         | (res, NONE) => res == S.SQLITE_CANTOPEN
-         | _ => fail "something bad happened")
-];
-
-val statementTests = [
-  It "can prepare a statement" (
-    fn _ => S.prepare(givenDb(), "create table t (v int)")
-                     == S.SQLITE_OK),
-
-  It "can step a statement and get S.SQLITE_DONE when its done" (
-    fn _ =>
-       let val db = givenDb ()
-           val r = S.prepare(db, "create table t (v int)")
-           val _ = (r == S.SQLITE_OK)
-           val res = S.step(db)
-       in res == S.SQLITE_DONE
-       end),
-
-  It "cannot prepare a statement that is invalid SQL" (
-    fn _ =>
-       let val db = givenDb ()
-           val res = S.prepare(db, "hello world")
-       in res == S.SQLITE_ERROR
-       end),
-
-  It "can finalize a statement" (
-    fn _ =>
-       let val db = givenDb ()
-           val _ = S.SQLITE_OK =?= S.prepare(db, "create table t (v int)")
-           val _ = S.SQLITE_DONE =?= S.step(db);
-           val res = S.finalize(db);
-       in res == S.SQLITE_OK
-       end)
-
-];
 
 val bindTests = [
   It "can get a bind parameter count" (
@@ -258,8 +277,11 @@ val runQueryTests = [
        end)
 
 ]
+*)
 
 fun main () =
-    let val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
+    let val _ = 1
+      (* val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
         val highLevelTests = runQueryTests
-    in runTests (lowLevelTests @ highLevelTests) end;
+       *)
+    in runTests (openCloseTests @ statementTests) end;

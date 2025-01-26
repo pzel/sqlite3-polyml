@@ -1,6 +1,7 @@
 local
   $(SML_LIB)/basis/basis.mlb
   $(SML_LIB)/basis/poly.mlb
+  $(SMLPKG)/github.com/pzel/sml-prelude/prelude.mlb
   sqliteCodes.sml
   sqlite3.sml
 in

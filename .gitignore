@@ -5,4 +5,5 @@ bin/*
 
 # dependencies managed by smlpkg
 lib/github.com/pzel/assert-polyml
-
+lib/github.com/pzel/sml-either/
+lib/github.com/pzel/sml-prelude/

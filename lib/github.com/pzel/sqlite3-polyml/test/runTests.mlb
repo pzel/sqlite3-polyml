@@ -1,7 +1,8 @@
 (* basis *)
 $(SML_LIB)/basis/basis.mlb
 $(SML_LIB)/basis/poly.mlb
-$(FOO)/github.com/pzel/assert-polyml/assert.mlb
+$(SMLPKG)/github.com/pzel/assert-polyml/assert.mlb
+$(SMLPKG)/github.com/pzel/sml-prelude/prelude.mlb
 
 (* SUT *)
 ../sqlite3.mlb
