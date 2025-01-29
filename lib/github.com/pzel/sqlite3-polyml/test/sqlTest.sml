@@ -13,6 +13,14 @@ fun givenDb () : S.db =
         (INR db) => db
       | (INL err) => raise (Fail ("givenDb: failed to open db" ^ PolyML.makestring err))
 
+fun givenTable (ddl : string) =
+    let val res = S.prepare(givenDb (), ddl)
+    in case res  of
+           INR stmt => (ignore (S.step stmt) ; S.finalize stmt)
+         | INL err => raise (Fail ("givenTable: error" ^ PolyML.makestring err))
+    end;
+
+
 val openCloseTests = [
 
   It "returns a db when a file can be opened" (
@@ -42,11 +50,6 @@ val openCloseTests = [
 
 ]
 
-fun expectR (res : ('a, ''b) either) (want : ''b) =
-    case res of
-        INR x => want == x
-     | other => fail ("got " ^ PolyML.makestring other);
-
 
 fun forceR (e : ('a, 'b) either) : 'b =
     Option.valOf (Either.asRight e);
@@ -72,33 +75,29 @@ val statementTests = [
                               >| Either.bindRight S.step
                               >| Either.asRight
        in res == SOME S.SQLITE_DONE
-       end)
+       end),
 
-(*
   It "can finalize a statement" (
     fn _ =>
        let val db = givenDb ()
-           val res = S.prepare(db, "create table t (v int)");
-           val stmt = forceR res;
-           val _ = S.SQLITE_DONE =?= S.step(stmt);
-           val res = S.finalize(stmt);
-       in res == S.SQLITE_OK
+           val stmt = S.prepare(db, "create table t (v int)") >| forceR
+           val _ = S.step(stmt)
+           val res = S.finalize(stmt)
+       in Either.asRight res == SOME S.SQLITE_OK
+       end),
+
+
+  It "can't finalize a statement twice" (
+    fn _ =>
+       let val db = givenDb ()
+           val stmt = S.prepare(db, "create table t (v int)") >| forceR
+           val _ = S.step(stmt)
+           val _ = true =?= Either.isRight (S.finalize stmt)
+           val res = (S.finalize stmt)
+       in Either.asLeft res == SOME S.SQLITE_MISUSE
        end)
-*)
+
 ];
-
-
-(*
-
-
-fun givenTable (ddl : string) =
-    let val db = givenDb ()
-        val ok = S.SQLITE_OK =?= S.prepare(db, ddl)
-        val done = S.SQLITE_DONE =?= S.step(db)
-        val ok = S.SQLITE_OK =?= S.finalize(db)
-    in db
-    end;
-
 
 
 val bindTests = [
@@ -108,8 +107,8 @@ val bindTests = [
            val res = S.prepare(db, "insert into t values (?,?)")
            val count = S.bindParameterCount(db)
        in count == 2
-       end),
-
+       end) ];
+(*
   It "can bind two integer values" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
@@ -284,4 +283,4 @@ fun main () =
       (* val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
         val highLevelTests = runQueryTests
        *)
-    in runTests (openCloseTests @ statementTests) end;
+    in runTests (openCloseTests @ statementTests @ bindTests) end;

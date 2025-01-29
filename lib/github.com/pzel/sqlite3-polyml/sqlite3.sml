@@ -45,7 +45,7 @@ signature SQLITE3 = sig
     val close : db -> (sqliteResultCode, sqliteResultCode) sum;
     val prepare : (db * string) -> (sqliteResultCode, stmt) sum;
     val step : stmt -> (sqliteResultCode, sqliteResultCode) sum;
-    val finalize : stmt -> sqliteResultCode;
+    val finalize : stmt -> (sqliteResultCode, sqliteResultCode) sum;
     val bind : (db * value list) -> bool;
     val bindParameterCount : db -> int;
 
@@ -128,7 +128,7 @@ val c_columnText = buildCall2 (sym "sqlite3_column_text", (cPointer, cInt), cPoi
 val c_columnBytes = buildCall2 (sym "sqlite3_column_bytes", (cPointer, cInt), cInt);
 
 
-type stmt = {pointer : Memory.voidStar ref};
+type stmt = {pointer : Memory.voidStar ref, finalized: bool ref};
 fun ptr (stmt as {pointer= ptr, ...} : stmt) = !ptr;
 
 (* Signature interface below *)
@@ -157,7 +157,7 @@ fun close ({dbHandle,...} : db) : (sqliteResultCode, sqliteResultCode) sum =
     end
 
 fun prepare ({dbHandle,...} : db, input : string) : (sqliteResultCode, stmt) sum =
-    let val stmt = {pointer = ref (Memory.malloc 0w0)}
+    let val stmt = {pointer = ref (Memory.malloc 0w0), finalized = ref false}
         val res_code = c_prepare(!dbHandle, input, ~1, 0, (#pointer stmt), ref Memory.null)
     in
       if res_code = SQLITE_OK orelse res_code = SQLITE_DONE
@@ -165,12 +165,19 @@ fun prepare ({dbHandle,...} : db, input : string) : (sqliteResultCode, stmt) sum
       else INL res_code  (* but what about the allocated memory? *)
     end
 
-fun step (stmt: stmt) : (sqliteResultCode, sqliteResultCode) sum = 
+fun step (stmt: stmt) : (sqliteResultCode, sqliteResultCode) sum =
     case c_step(ptr stmt) of
         SQLITE_OK => INR SQLITE_OK
+      | SQLITE_DONE => INR SQLITE_DONE
       | other => INL other (* need to get more positive *)
 
-fun finalize (stmt : stmt) : sqliteResultCode = c_finalize(ptr stmt);
+fun finalize (stmt as {pointer, finalized} : stmt) : (sqliteResultCode, sqliteResultCode) sum =
+    if !finalized
+    then INL SQLITE_MISUSE
+    else
+      case c_finalize(ptr stmt) of
+          SQLITE_OK => INR SQLITE_OK before (finalized := true; Memory.free (!pointer))
+        | other => INL other
 
 fun bindParameterCount (db : db) : int = raise Empty
     (*
