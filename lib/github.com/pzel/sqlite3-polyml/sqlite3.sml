@@ -47,7 +47,7 @@ signature SQLITE3 = sig
     val step : stmt -> (sqliteResultCode, sqliteResultCode) sum;
     val finalize : stmt -> (sqliteResultCode, sqliteResultCode) sum;
     val bind : (db * value list) -> bool;
-    val bindParameterCount : db -> int;
+    val bindParameterCount : stmt -> int;
 
     (* high-level functions *)
     val runQuery : string -> value list -> db -> value list list;
@@ -179,9 +179,8 @@ fun finalize (stmt as {pointer, finalized} : stmt) : (sqliteResultCode, sqliteRe
           SQLITE_OK => INR SQLITE_OK before (finalized := true; Memory.free (!pointer))
         | other => INL other
 
-fun bindParameterCount (db : db) : int = raise Empty
-    (*
-    c_bindParameterCount(!stmt); *)
+fun bindParameterCount (stmt as {pointer, finalized}) =
+    c_bindParameterCount(!pointer)
 
 fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
     case value of

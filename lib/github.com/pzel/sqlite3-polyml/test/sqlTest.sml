@@ -14,9 +14,10 @@ fun givenDb () : S.db =
       | (INL err) => raise (Fail ("givenDb: failed to open db" ^ PolyML.makestring err))
 
 fun givenTable (ddl : string) =
-    let val res = S.prepare(givenDb (), ddl)
+    let val db = givenDb ()
+        val res = S.prepare(db, ddl)
     in case res  of
-           INR stmt => (ignore (S.step stmt) ; S.finalize stmt)
+           INR stmt => (ignore (S.step stmt) ; S.finalize stmt; db)
          | INL err => raise (Fail ("givenTable: error" ^ PolyML.makestring err))
     end;
 
@@ -104,10 +105,18 @@ val bindTests = [
   It "can get a bind parameter count" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
-           val res = S.prepare(db, "insert into t values (?,?)")
-           val count = S.bindParameterCount(db)
+           val stmt = S.prepare(db, "insert into t values (?,?)") >| forceR
+           val count = S.bindParameterCount(stmt)
        in count == 2
-       end) ];
+       end),
+  It "can get a zero parameter count" (
+    fn _ =>
+       let val db = givenTable "create table t (i int, j int)";
+           val stmt = S.prepare(db, "insert into t values (1,2)") >| forceR
+           val count = S.bindParameterCount(stmt)
+       in count == 0
+       end) 
+];
 (*
   It "can bind two integer values" (
     fn _ =>
