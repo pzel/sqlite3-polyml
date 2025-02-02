@@ -43,10 +43,10 @@ signature SQLITE3 = sig
 
     val openDb : string -> (sqliteResultCode, db) sum;
     val close : db -> (sqliteResultCode, sqliteResultCode) sum;
-    val prepare : (db * string) -> (sqliteResultCode, stmt) sum;
+    val prepare : string -> db -> (sqliteResultCode, stmt) sum;
     val step : stmt -> (sqliteResultCode, sqliteResultCode) sum;
     val finalize : stmt -> (sqliteResultCode, sqliteResultCode) sum;
-    val bind : (db * value list) -> bool;
+    val bind : value list -> stmt -> bool;
     val bindParameterCount : stmt -> int;
 
     (* high-level functions *)
@@ -156,7 +156,7 @@ fun close ({dbHandle,...} : db) : (sqliteResultCode, sqliteResultCode) sum =
        else INL res
     end
 
-fun prepare ({dbHandle,...} : db, input : string) : (sqliteResultCode, stmt) sum =
+fun prepare input ({dbHandle,...} : db) : (sqliteResultCode, stmt) sum =
     let val stmt = {pointer = ref (Memory.malloc 0w0), finalized = ref false}
         val res_code = c_prepare(!dbHandle, input, ~1, 0, (#pointer stmt), ref Memory.null)
     in
@@ -191,16 +191,14 @@ fun bindValue (stmt : stmt, idx: int, value: value) : sqliteResultCode =
       | SqlBlob v => c_bindBlob(ptr stmt, idx, v, Word8Vector.length v, ~1)
       | SqlNull => c_bindNull(ptr stmt, idx);
 
-fun bind (db : db, values : value list) : bool =
-    raise Empty
-    (*
+fun bind (values : value list) (stmt as {pointer, finalized} : stmt) : bool =
     (* todo check that parameter count and len(values) is the same *)
     let val iota = List.tabulate(length values, fn i => i+1)
         val zipped = ListPair.zip(iota, values);
-        val res = map (fn (idx,v) => bindValue(#stmt db, idx, v)) zipped
+        val res = map (fn (idx,v) => bindValue(stmt, idx, v)) zipped
     in
         List.all (fn r => r = SQLITE_OK) res
-    end *)
+    end
 
 fun getRes (stmt : stmt) : value list =
     case c_columnCount(ptr stmt) of

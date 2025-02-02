@@ -15,7 +15,7 @@ fun givenDb () : S.db =
 
 fun givenTable (ddl : string) =
     let val db = givenDb ()
-        val res = S.prepare(db, ddl)
+        val res = S.prepare ddl db
     in case res  of
            INR stmt => (ignore (S.step stmt) ; S.finalize stmt; db)
          | INL err => raise (Fail ("givenTable: error" ^ PolyML.makestring err))
@@ -57,118 +57,120 @@ fun forceR (e : ('a, 'b) either) : 'b =
 
 val statementTests = [
   It "can prepare a statement" (
-    fn _ => let val st = S.prepare(givenDb(), "create table t (v int)")
+    fn _ => let val st = S.prepare "create table t (v int)" (givenDb())
             in Either.isRight st == true
             end),
 
   It "cannot prepare a statement that is invalid SQL" (
     fn _ =>
        let val db = givenDb ()
-           val res = S.prepare(db, "hello world")
+           val res = S.prepare "hello world" db
        in (Either.asLeft res) == SOME S.SQLITE_ERROR
        end),
+
+
+
 
 
   It "can step a statement and get S.SQLITE_DONE when its done" (
     fn _ =>
        let val db = givenDb ()
-           val res = S.prepare(db, "create table t (v int)")
-                              >| Either.bindRight S.step
-                              >| Either.asRight
+           val res = S.prepare "create table t (v int)" db
+                               >| Either.bindRight S.step
+                               >| Either.asRight
        in res == SOME S.SQLITE_DONE
        end),
+
 
   It "can finalize a statement" (
     fn _ =>
        let val db = givenDb ()
-           val stmt = S.prepare(db, "create table t (v int)") >| forceR
-           val _ = S.step(stmt)
-           val res = S.finalize(stmt)
+           val stmt = S.prepare "create table t (v int)" db >| forceR
+           val _ = S.step stmt
+           val res = S.finalize stmt
        in Either.asRight res == SOME S.SQLITE_OK
        end),
-
 
   It "can't finalize a statement twice" (
     fn _ =>
        let val db = givenDb ()
-           val stmt = S.prepare(db, "create table t (v int)") >| forceR
-           val _ = S.step(stmt)
+           val stmt = S.prepare "create table t (v int)" db >| forceR
+           val _ = S.step stmt
            val _ = true =?= Either.isRight (S.finalize stmt)
-           val res = (S.finalize stmt)
+           val res = S.finalize stmt
        in Either.asLeft res == SOME S.SQLITE_MISUSE
        end)
 
 ];
 
-
 val bindTests = [
   It "can get a bind parameter count" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
-           val stmt = S.prepare(db, "insert into t values (?,?)") >| forceR
-           val count = S.bindParameterCount(stmt)
+           val stmt = S.prepare "insert into t values (?,?)" db >| forceR
+           val count = S.bindParameterCount stmt
        in count == 2
        end),
+
   It "can get a zero parameter count" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
-           val stmt = S.prepare(db, "insert into t values (1,2)") >| forceR
-           val count = S.bindParameterCount(stmt)
+           val stmt = S.prepare "insert into t values (1,2)" db >| forceR
+           val count = S.bindParameterCount stmt
        in count == 0
-       end) 
-];
-(*
+       end),
+
   It "can bind two integer values" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
-           val res = S.prepare(db, "insert into t values (?,?)")
-           val res = S.bind(db, [S.SqlInt 0, S.SqlInt 3])
+           val stmt = S.prepare "insert into t values (?,?)" db >| forceR
+           val res = S.bind [S.SqlInt 0, S.SqlInt 3] stmt
        in res == true
        end),
 
   It "can bind int64 values" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
-           val res = S.prepare(db, "insert into t values (?,?)")
-           val res = S.bind(db, [S.SqlInt64 0, S.SqlInt64 3])
+           val stmt = S.prepare "insert into t values (?,?)" db >| forceR
+           val res = S.bind [S.SqlInt64 0, S.SqlInt64 3] stmt
        in res == true
        end),
 
   It "can bind double values" (
     fn _ =>
        let val db = givenTable "create table t (p double, q double)";
-           val res = S.prepare(db, "insert into t values (?,?)")
-           val res = S.bind(db, [S.SqlDouble 0.0, S.SqlDouble 30.0])
+           val stmt = S.prepare "insert into t values (?,?)" db >| forceR
+           val res = S.bind [S.SqlDouble 0.0, S.SqlDouble 30.0] stmt
        in res == true
        end),
 
   It "can bind text values" (
     fn _ =>
        let val db = givenTable "create table t (t text, u text, v text)";
-           val res = S.prepare(db, "insert into t values (?,?,?)")
-           val res = S.bind(db, [S.SqlText "a", S.SqlText "b", S.SqlText "c"])
+           val stmt = S.prepare "insert into t values (?,?,?)" db >| forceR
+           val res = S.bind [S.SqlText "a", S.SqlText "b", S.SqlText "c"] stmt
        in res == true
        end),
 
   It "can bind Blob values" (
     fn _ =>
        let val db = givenTable "create table t (b blob)";
-           val res = S.prepare(db, "insert into t values (?)")
+           val stmt = S.prepare "insert into t values (?)" db >| forceR
            val vec = Word8Vector.fromList([0w0,0w1,0w2,0w3])
-           val res = S.bind(db, [S.SqlBlob vec])
+           val res = S.bind [S.SqlBlob vec] stmt
        in res == true
        end),
 
   It "can bind NULL values" (
     fn _ =>
        let val db = givenTable "create table t (a int, b double, c text)";
-           val res = S.prepare(db, "insert into t values (?,?,?)")
-           val res = S.bind(db, [S.SqlNull, S.SqlNull, S.SqlNull])
+           val stmt = S.prepare "insert into t values (?,?,?)" db >| forceR
+           val res = S.bind [S.SqlNull, S.SqlNull, S.SqlNull] stmt
        in res == true
        end)
-
 ]
 
+(*
 val stepTests = [
   It "can step through a bound statement" (
     fn _ =>
@@ -217,6 +219,9 @@ val stepTests = [
 
 ]
 
+*)
+
+(*
 val runQueryTests = [
   It "can insert in one go" (
     fn _=>
@@ -285,6 +290,7 @@ val runQueryTests = [
        end)
 
 ]
+
 *)
 
 fun main () =
@@ -292,4 +298,5 @@ fun main () =
       (* val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
         val highLevelTests = runQueryTests
        *)
-    in runTests (openCloseTests @ statementTests @ bindTests) end;
+    in runTests (openCloseTests @ statementTests @ bindTests )
+    end;
