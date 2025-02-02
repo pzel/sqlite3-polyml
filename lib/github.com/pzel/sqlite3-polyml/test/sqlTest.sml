@@ -1,6 +1,9 @@
 open Assert;
 infixr 2 == =?= != =/=;
 
+infix 1 >>=
+fun op >>= (v, f) = v >| (Either.bindRight f)
+
 structure S = Sqlite3;
 
 fun freshName () : string =
@@ -53,7 +56,19 @@ val openCloseTests = [
 
 
 fun forceR (e : ('a, 'b) either) : 'b =
-    Option.valOf (Either.asRight e);
+    case e of
+        INR r => r
+      | INL l => raise Fail("EXPECTED INR, GOT INL " ^ (PolyML.makestring l));
+
+fun valToString (v: S.value) : string =
+    let open Sqlite3
+    in case v of SqlInt i => Int.toString i
+               | SqlInt64 i => Int.toString i
+               | SqlDouble r => Real.toString r
+               | SqlText t => t
+               | SqlBlob v => Byte.bytesToString v
+               | SqlNull => "NULL"
+    end
 
 val statementTests = [
   It "can prepare a statement" (
@@ -67,10 +82,6 @@ val statementTests = [
            val res = S.prepare "hello world" db
        in (Either.asLeft res) == SOME S.SQLITE_ERROR
        end),
-
-
-
-
 
   It "can step a statement and get S.SQLITE_DONE when its done" (
     fn _ =>
@@ -103,6 +114,11 @@ val statementTests = [
 
 ];
 
+fun assertSameStmt (x, y) =
+    if PolyML.pointerEq(x,y)
+    then Assert.succeed("pointers equal")
+    else Assert.fail("pointers not equal")
+
 val bindTests = [
   It "can get a bind parameter count" (
     fn _ =>
@@ -124,32 +140,32 @@ val bindTests = [
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
            val stmt = S.prepare "insert into t values (?,?)" db >| forceR
-           val res = S.bind [S.SqlInt 0, S.SqlInt 3] stmt
-       in res == true
+           val res = S.bind [S.SqlInt 0, S.SqlInt 3] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end),
 
   It "can bind int64 values" (
     fn _ =>
        let val db = givenTable "create table t (i int, j int)";
            val stmt = S.prepare "insert into t values (?,?)" db >| forceR
-           val res = S.bind [S.SqlInt64 0, S.SqlInt64 3] stmt
-       in res == true
+           val res = S.bind [S.SqlInt64 0, S.SqlInt64 3] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end),
 
   It "can bind double values" (
     fn _ =>
        let val db = givenTable "create table t (p double, q double)";
            val stmt = S.prepare "insert into t values (?,?)" db >| forceR
-           val res = S.bind [S.SqlDouble 0.0, S.SqlDouble 30.0] stmt
-       in res == true
+           val res = S.bind [S.SqlDouble 0.0, S.SqlDouble 30.0] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end),
 
   It "can bind text values" (
     fn _ =>
        let val db = givenTable "create table t (t text, u text, v text)";
            val stmt = S.prepare "insert into t values (?,?,?)" db >| forceR
-           val res = S.bind [S.SqlText "a", S.SqlText "b", S.SqlText "c"] stmt
-       in res == true
+           val res = S.bind [S.SqlText "a", S.SqlText "b", S.SqlText "c"] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end),
 
   It "can bind Blob values" (
@@ -157,61 +173,65 @@ val bindTests = [
        let val db = givenTable "create table t (b blob)";
            val stmt = S.prepare "insert into t values (?)" db >| forceR
            val vec = Word8Vector.fromList([0w0,0w1,0w2,0w3])
-           val res = S.bind [S.SqlBlob vec] stmt
-       in res == true
+           val res = S.bind [S.SqlBlob vec] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end),
 
   It "can bind NULL values" (
     fn _ =>
        let val db = givenTable "create table t (a int, b double, c text)";
            val stmt = S.prepare "insert into t values (?,?,?)" db >| forceR
-           val res = S.bind [S.SqlNull, S.SqlNull, S.SqlNull] stmt
-       in res == true
+           val res = S.bind [S.SqlNull, S.SqlNull, S.SqlNull] stmt >| forceR
+       in assertSameStmt(res, stmt)
        end)
 ]
 
-(*
+
 val stepTests = [
-  It "can step through a bound statement" (
+  It "can step a bound statement" (
     fn _ =>
-       let val db = givenTable (concat ["create table t ",
-                                        "(a int, b double, c text)"])
-           val _ = S.SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
-           val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-           val res = S.step(db)
-       in res == S.SQLITE_DONE
+       let val db = givenTable "create table t (a int, b double, c text)";
+           val res = S.prepare "insert into t values (?,?,?)" db
+                               >>= (S.bind [S.SqlInt 3,
+                                            S.SqlDouble 2.0,
+                                            S.SqlText "a"])
+                               >>= (S.step)
+       in forceR res == S.SQLITE_DONE
        end),
 
   It "can finalize a stepped-through statement" (
     fn _ =>
-       let val db = givenTable (concat ["create table t ",
-                                        "(a int, b double, c text)"])
-           val _ = S.SQLITE_OK =?= S.prepare(db, "insert into t values (?,?,?)")
-           val _ = true =?= S.bind(db, [S.SqlInt 3, S.SqlDouble 2.0, S.SqlText "a"])
-           val _ = S.SQLITE_DONE =?= S.step(db)
-           val res = S.finalize(db)
+       let val db = givenTable "create table t (a int, b double, c text)"
+           val stmt = S.prepare "insert into t values (?,?,?)" db
+                               >| Either.bindRight(S.bind [S.SqlInt 3,
+                                                           S.SqlDouble 2.0,
+                                                           S.SqlText "a"])
+                               >| forceR
+           val stepped = S.step stmt >| forceR
+           val res = S.finalize stmt >| forceR
        in res == S.SQLITE_OK
        end),
 
   It "can step as many times as there are rows in result" (
     fn _ =>
        let
-         val db = givenTable ("create table t (a int, b double, c text)")
-         fun insert (i, d, t) = (
-           S.prepare(db, "insert into t values (?,?,?)");
-           S.bind(db, [S.SqlInt i, S.SqlDouble d, S.SqlText t]);
-           S.step(db));
+         val db = givenTable "create table t (a int, b double, c text)";
+         fun insert (i, d, t) =
+             (let val stmt = S.prepare "insert into t values (?,?,?)" db
+                  val res = stmt >>= S.bind [S.SqlInt i, S.SqlDouble d, S.SqlText t]
+                                 >>= S.step
+              in Either.mapRight S.finalize stmt
+              end)
 
          val _ = (insert (1,   2.0, "a");
                   insert (10,  20.0, "b");
                   insert (100, 200.0, "c"))
-         val _ = S.SQLITE_OK =?= S.finalize(db)
 
-         val _ = S.SQLITE_OK =?= S.prepare(db, "select * from t")
-         val a = S.step(db);
-         val b = S.step(db);
-         val c = S.step(db);
-         val d = S.step(db);
+         val select = S.prepare "select * from t" db >| forceR
+         val a = S.step select >| forceR;
+         val b = S.step select >| forceR;
+         val c = S.step select >| forceR;
+         val d = S.step select >| forceR;
 
        in (a,b,c,d) == (S.SQLITE_ROW,S.SQLITE_ROW,S.SQLITE_ROW,S.SQLITE_DONE)
        end
@@ -219,84 +239,116 @@ val stepTests = [
 
 ]
 
-*)
 
-(*
 val runQueryTests = [
-  It "can insert in one go" (
+  It "can run query, binding the passed parameters" (
     fn _=>
        let val db = givenTable "create table t (a int, b double, c text)";
            val res = S.runQuery "insert into t values (?,?,?)" [
-                 S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X"] db;
-       in length res == 0 end
+                 S.SqlInt 1, S.SqlDouble 2.0, S.SqlText "X" ] db
+       in length (forceR res) == 0
+       end
+  ),
+
+  It "will return left if parameters can't be bound" (
+    fn _=>
+       let val db = givenTable "create table t (a int not null)";
+           val res = S.runQuery "insert into t values (?)" [S.SqlNull ] db
+       in Either.asLeft res == SOME S.SQLITE_CONSTRAINT
+       end
+  ),
+
+  It "will return left if parameters don't match formal count" (
+    fn _=>
+       let val db = givenTable "create table t (a int, b int)";
+           val res = S.runQuery "insert into t values (?)" [S.SqlInt 1] db
+       in Either.asLeft res == SOME S.SQLITE_ERROR
+       end
   ),
 
   It "can read a row" (
     fn _=>
        let val db = givenTable "create table f (a int, b double, c text)";
-           val _ = S.runQuery "insert into f values (?,?,?)" [
-                 S.SqlInt 1,
-                 S.SqlDouble 2.0,
-                 S.SqlText "\226\141\186\226\141\181"] db;
+           val _ = S.runQuery "insert into f values (?,?,?)"
+                              [S.SqlInt 1,
+                               S.SqlDouble 2.22,
+                               S.SqlText "\226\141\186\226\141\181"]
+                              db;
            val res = S.runQuery "select * from f" [] db;
-           val _ = 1 =?= length res
-       in case hd(res) of
+           val _ = 1 =?= length (forceR res)
+       in case hd(forceR res) of
               [S.SqlInt 1,
-               S.SqlDouble _,
-               S.SqlText "\226\141\186\226\141\181"] => succeed "selected"
+               S.SqlDouble doubleVal,
+               S.SqlText "\226\141\186\226\141\181"] => if Real.==(doubleVal, 2.22)
+                                                        then succeed "selected"
+                                                        else fail "real not matched"
             | other => fail ("failed:" ^ (PolyML.makestring other))
        end
   ),
 
-  It "can read a row (unicode literal)" (
+  It "can execute a sql string directly" (
     fn _=>
-       let val db = givenTable "create table f (a int, b double, c text)";
-           val _ = S.runQuery "insert into f values (?,?,?)" [
-                 S.SqlInt 1,
-                 S.SqlDouble 2.0,
-                 S.SqlText "こんにちは、世界"] db;
-           val res = S.runQuery "select * from f" [] db;
-           val _ = 1 =?= length res
-       in case hd(res) of
-              [S.SqlInt 1,
-               S.SqlDouble _,
-               S.SqlText "こんにちは、世界"] => succeed "selected"
-            | other => fail ("failed:" ^ (PolyML.makestring other))
-       end),
-
-  It "can read a row with a BLOB" (
-    fn _=>
-       let val db = givenTable "create table f (a int, b blob)"
-           val v = Word8Vector.tabulate(1024*1024, Word8.fromInt)
-           val _ = S.runQuery "insert into f values (?,?)" [
-                 S.SqlInt 1024,
-                 S.SqlBlob v] db;
-           val res = S.runQuery "select * from f" [] db;
-           val _ = 1 =?= length res
-       in case hd(res) of
-              [S.SqlInt 1024,
-               S.SqlBlob v] => succeed "selected"
-            | other => fail ("failed:" ^ (PolyML.makestring other))
+       let val db = givenTable "create table f (a int, b text)";
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values (1,'a')" db;
+           val res = S.runQuery "select * from f" [] db
+       in map (map valToString) (forceR res) == [["1", "a"]]
        end
   ),
 
-  It "returns proper codes on constraint violation" (
+  It "can execute a sql string directly, returning error if encountered" (
     fn _=>
-       let val db = givenTable "create table f (a int)"
-           val r0 = S.SQLITE_OK =?= (S.execute "create unique index fi on f (a)" db)
-           val r1 = S.SQLITE_OK =?= (S.execute "insert into f values (1)" db)
-           val r2 = S.execute "insert into f values (1)" db
-       in r2 == S.SQLITE_CONSTRAINT
-       end)
+       let val db = givenTable "create table f (a int, b text)";
+           val res = S.execute "insert into f values (1,'a',2)" db;
+       in res == S.SQLITE_ERROR
+       end
+  ),
 
-]
+  It "can read multiple rows with one query" (
+    fn _=>
+       let val db = givenTable "create table f (a int, b text)";
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values (1,'c')" db;
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values (2,'b')" db;
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values (3,'a')" db;
+           val res = S.runQuery "select * from f order by b" [] db
+       in map (map valToString) (forceR res) == [["3", "a"], ["2", "b"], ["1", "c"]]
+       end
+  ),
 
-*)
+  It "can read and write unicode literals" (
+    fn _=>
+       let val db = givenTable "create table f (t text)";
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values ('こんにちは')" db;
+           val _ = S.SQLITE_OK =?= S.execute "insert into f values ('世界')" db;
+           val res = S.runQuery "select * from f" [] db
+       in map (map valToString) (forceR res) == [["こんにちは"],["世界"]]
+       end
+  ),
+
+  It "can bind unicode literals" (
+    fn _=>
+       let val db = givenTable "create table f (t text)";
+           val _ = S.runQuery "insert into f values (?)" [S.SqlText "今"] db;
+           val res = S.runQuery "select * from f" [] db
+       in map (map valToString) (forceR res) == [["今"]]
+       end
+  ),
+
+  It "can bind blobs" (
+    fn _=>
+       let val db = givenTable "create table f (b blob)";
+           val v = Word8Vector.tabulate(1024, Word8.fromInt)
+           val _ = S.runQuery "insert into f values (?)" [S.SqlBlob v] db;
+           val res = S.runQuery "select * from f" [] db
+       in case (hd (hd (forceR res))) of
+              S.SqlBlob v => succeed "blob made it through"
+            | _ => fail "blob got mangled"
+       end
+  )
+
+];
 
 fun main () =
-    let val _ = 1
-      (* val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
+    let val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
         val highLevelTests = runQueryTests
-       *)
-    in runTests (openCloseTests @ statementTests @ bindTests )
+    in runTests (lowLevelTests @ highLevelTests)
     end;
