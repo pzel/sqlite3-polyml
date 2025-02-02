@@ -69,6 +69,9 @@ datatype sqliteType =
        | SQLITE_BLOB
        | SQLITE_NULL
 
+val TRANSIENT : int = ~1;
+val UP_TO_NUL : int = ~1;
+
 type rc = sqliteResultCode;
 
 
@@ -106,12 +109,19 @@ val c_rc : rc conversion = makeConversion
 
 val c_openDb = buildCall2 (sym "sqlite3_open", (cString, cStar cPointer), c_rc);
 val c_close = buildCall1 (sym "sqlite3_close_v2", cPointer, c_rc);
+
+
+val c_softLimit = buildCall1 (sym "sqlite3_soft_heap_limit64", (cInt64), cInt64);
+val c_hardLimit = buildCall1 (sym "sqlite3_hard_heap_limit64", (cInt64), cInt64);
+
 val c_prepare = buildCall6 (sym "sqlite3_prepare_v3",
                             (cPointer, cString, cInt, cUint, cStar cPointer, cStar cPointer),
                             c_rc);
 
 val c_step = buildCall1 (sym "sqlite3_step", (cPointer), c_rc);
 val c_finalize = buildCall1 (sym "sqlite3_finalize", (cPointer), c_rc);
+val c_reset = buildCall1 (sym "sqlite3_reset", (cPointer), c_rc);
+val c_clearBindings = buildCall1 (sym "sqlite3_clear_bindings", (cPointer), c_rc);
 val c_columnCount = buildCall1 (sym "sqlite3_column_count", (cPointer), cInt);
 val c_columnType = buildCall2 (sym "sqlite3_column_type", (cPointer, cInt), cSqliteType);
 
@@ -136,7 +146,7 @@ fun ptr (stmt as {pointer= ptr, ...} : stmt) = !ptr;
 
 (* Signature interface below *)
 
-type db = {dbHandle: Memory.voidStar ref}
+type db = {dbHandle: Memory.voidStar ref, stmtPointer: Memory.voidStar}
 datatype value = SqlInt of int
                  | SqlInt64 of int
                  | SqlDouble of real
@@ -145,27 +155,32 @@ datatype value = SqlInt of int
                  | SqlNull
 
 fun openDb (filename : string) : (rc, db) sum =
-    let val dbH = ref (Memory.malloc 0w0);
+    let (* val _ = c_softLimit (1024*1024);
+        val _ = c_hardLimit (2*1024*1024); *)
+        val dbH = ref (Memory.malloc 0w0);
+        val stmtPointer = Memory.malloc 0w0;
         val res = c_openDb (filename, dbH);
     in if res = SQLITE_OK
-       then (Either.INR {dbHandle=dbH})
+       then (Either.INR {dbHandle=dbH, stmtPointer=stmtPointer})
        else (Either.INL res)
     end
 
-fun close ({dbHandle,...} : db) : (rc, rc) sum =
+fun close ({dbHandle,stmtPointer} : db) : (rc, rc) sum =
     let val res = c_close (!dbHandle)
+        val _ = Memory.free stmtPointer
     in if res = SQLITE_OK
        then INR res
        else INL res
     end
 
-fun prepare input ({dbHandle,...} : db) : (rc, stmt) sum =
-    let val stmt = {pointer = ref (Memory.malloc 0w0), finalized = ref false}
+
+fun prepare input ({dbHandle, stmtPointer} : db) : (rc, stmt) sum =
+    let val stmt = {pointer = ref stmtPointer, finalized = ref false}
         val res_code = c_prepare(!dbHandle, input, ~1, 0, (#pointer stmt), ref Memory.null)
     in
       if res_code = SQLITE_OK orelse res_code = SQLITE_DONE
       then INR stmt
-      else INL res_code  (* but what about the allocated memory? *)
+      else INL res_code
     end
 
 fun step (stmt: stmt) : (rc, rc) sum =
@@ -179,8 +194,8 @@ fun finalize (stmt as {pointer, finalized} : stmt) : (rc, rc) sum =
     if !finalized
     then INL SQLITE_MISUSE
     else
-      case c_finalize(ptr stmt) of
-          SQLITE_OK => INR SQLITE_OK before (finalized := true; Memory.free (!pointer))
+      case (c_clearBindings(ptr stmt); c_reset(ptr stmt);  c_finalize(ptr stmt)) of
+          SQLITE_OK => INR SQLITE_OK before (pointer := Memory.null; finalized := true)
         | other => INL other
 
 fun bindParameterCount (stmt as {pointer, finalized}) =
@@ -191,8 +206,8 @@ fun bindValue (stmt : stmt, idx: int, value: value) : rc =
         SqlInt i => c_bindInt(ptr stmt, idx, i)
       | SqlInt64 i => c_bindInt64(ptr stmt, idx, i)
       | SqlDouble f => c_bindDouble(ptr stmt, idx, f)
-      | SqlText s => c_bindText(ptr stmt, idx, s, ~1 (* up to NUL *), ~1 (* Transient *))
-      | SqlBlob v => c_bindBlob(ptr stmt, idx, v, Word8Vector.length v, ~1)
+      | SqlText s => c_bindText(ptr stmt, idx, s, UP_TO_NUL, TRANSIENT)
+      | SqlBlob v => c_bindBlob(ptr stmt, idx, v, Word8Vector.length v, TRANSIENT)
       | SqlNull => c_bindNull(ptr stmt, idx);
 
 fun bind (values : value list) (stmt as {pointer, finalized} : stmt) =
@@ -233,16 +248,15 @@ and readBlob (stmt: stmt, idx : int) : Word8Vector.vector =
 and readText (stmt: stmt, idx : int) : string =
     Byte.bytesToString (readBlob (stmt, idx))
 
-
-
 (* High-level interface *)
 fun runQuery (sql : string) (params : value list) (db: db) : (rc, value list list) sum  =
     let val stmt = prepare sql db
         val res = stmt >| Either.bindRight (bind params) >| Either.bindRight (stepThrough [])
         val finalize_result = Either.bindRight finalize stmt
     in
-      (* consider both res and final for final result *)
-      res
+      case finalize_result of
+          INL c => INL c
+        | INR r => res
     end
 and stepThrough (acc : value list list) (stmt: stmt) =
     case step(stmt) of

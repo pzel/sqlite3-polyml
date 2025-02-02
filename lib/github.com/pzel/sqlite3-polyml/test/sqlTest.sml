@@ -347,6 +347,27 @@ val runQueryTests = [
 
 ];
 
+val memoryTests = [
+  It "does not leak memory when using runQuery"
+     (fn _=>
+         let val db = givenDb ();
+             val _ = S.execute "create table b (i int, t text)" db;
+             fun newString i = S.SqlText (Int.toString i);
+             fun loopStep i =
+                 if i = 1024
+                 then ()
+                 else (S.runQuery "insert into b values (?,?)" [S.SqlInt i, newString i] db;
+                       S.runQuery "select * from b limit 10" [] db;
+                       loopStep (i+1))
+         in (print "START\n";
+             loopStep 1;
+             print "END\n";
+             S.close db;
+             succeed "OK")
+         end)
+]
+
+
 fun main () =
     let val lowLevelTests = openCloseTests @ statementTests @ bindTests @ stepTests
         val highLevelTests = runQueryTests
